@@ -1,0 +1,43 @@
+{
+  "name": "basic",
+  "description": "Two customers and a merchant with keys of every type, plus a closed account to exercise AC04.",
+  "accounts": [
+    {
+      "id": "alice",
+      "owner_name": "Alice Santos",
+      "document": "529.982.247-25",
+      "initial_balance_cents": 500000
+    },
+    {
+      "id": "bob",
+      "owner_name": "Bob Oliveira",
+      "document": "390.533.447-05",
+      "type": "SVGS",
+      "initial_balance_cents": 10000
+    },
+    {
+      "id": "padaria",
+      "owner_name": "Padaria Pao Quente Ltda",
+      "document": "12.ABC.345/01DE-35",
+      "ispb": "12345678",
+      "branch": "0042",
+      "number": "778899",
+      "initial_balance_cents": 0
+    },
+    {
+      "id": "closed",
+      "owner_name": "Conta Encerrada",
+      "document": "111.444.777-35",
+      "status": "CLOSED"
+    }
+  ],
+  "keys": [
+    { "account_id": "alice", "key": "alice@example.com" },
+    { "account_id": "alice", "key": "+5521987654321" },
+    { "account_id": "bob", "key": "39053344705" },
+    { "account_id": "padaria", "key": "12ABC34501DE35" },
+    { "account_id": "padaria", "key": "7d9f0335-8dcc-4054-9bf9-0dbd61d36906" },
+    { "account_id": "closed", "key": "closed@example.com" }
+  ],
+  "dict_rate_limit": { "capacity": 100, "refill_per_minute": 20, "not_found_cost": 3 }
+}

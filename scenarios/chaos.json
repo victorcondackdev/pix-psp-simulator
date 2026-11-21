@@ -1,0 +1,28 @@
+{
+  "name": "chaos",
+  "description": "Global failure-injection rules layered on top of basic.json.",
+  "accounts": [],
+  "chaos_rules": [
+    {
+      "id": "big-tickets-rejected",
+      "name": "Transfers above R$ 10.000,00 are rejected as not allowed",
+      "match": { "operation": "transfer", "min_amount_cents": 1000000 },
+      "fail": "AM02"
+    },
+    {
+      "id": "flaky-spi",
+      "name": "5% of QR payments time out after 3s",
+      "probability": 0.05,
+      "match": { "operation": "qr_payment" },
+      "timeout": true,
+      "latency": "3s"
+    },
+    {
+      "id": "noisy-webhooks-padaria",
+      "name": "Webhooks for payments to the bakery arrive twice and out of order",
+      "match": { "to_account": "padaria" },
+      "duplicate_webhooks": 1,
+      "reorder_webhooks": "2s"
+    }
+  ]
+}

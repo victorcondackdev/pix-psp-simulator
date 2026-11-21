@@ -1,0 +1,28 @@
+# Simulator plus an example webhook consumer that verifies signatures.
+#
+#   docker compose up --build
+#   open http://localhost:8080
+services:
+  pixsim:
+    build:
+      context: .
+      target: pixsim
+    ports:
+      - "8080:8080"
+    environment:
+      PIXSIM_SCENARIOS: /scenarios/basic.json
+      PIXSIM_BASE_URL: http://localhost:8080
+      PIXSIM_SETTLEMENT_LATENCY: 750ms
+      PIXSIM_LOG_FORMAT: json
+    depends_on:
+      - receiver
+
+  receiver:
+    build:
+      context: .
+      target: receiver
+    environment:
+      WEBHOOK_SECRET: whsec_demo
+    command: ["-addr", ":9000"]
+    ports:
+      - "9000:9000"

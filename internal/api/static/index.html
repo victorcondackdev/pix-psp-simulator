@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pix-psp-simulator</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ee; --muted: #8a92a6;
+    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --accent: #32bcad;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f7f9; --panel: #fff; --line: #e3e6ec; --text: #1c2030; --muted: #667085; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  header .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  button, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { padding: 20px 24px; display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  section.wide { grid-column: 1 / -1; }
+  section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .stat { padding: 14px 16px; border-right: 1px solid var(--line); }
+  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .scroll { max-height: 360px; overflow: auto; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+  .ACSC, .delivered, .ACTIVE { color: var(--ok); }
+  .RJCT, .failed, .CLOSED { color: var(--bad); }
+  .ACSP, .pending, .BLOCKED { color: var(--warn); }
+  .empty { color: var(--muted); padding: 16px; }
+  footer { color: var(--muted); padding: 0 24px 24px; font-size: 12px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>pix</span>-psp-simulator</h1>
+  <a href="/openapi.json" style="color:var(--muted)">openapi.json</a>
+  <div class="clock" id="clock">-</div>
+  <input id="adv" value="1h" size="6" aria-label="advance by">
+  <button id="advbtn" title="POST /admin/clock/advance">Advance clock</button>
+</header>
+<main>
+  <section class="wide"><h2>Overview</h2><div class="stats" id="stats"></div></section>
+  <section><h2>Accounts</h2><div class="scroll" id="accounts"></div></section>
+  <section><h2>Recent transfers</h2><div class="scroll" id="transfers"></div></section>
+  <section class="wide"><h2>Webhook deliveries</h2><div class="scroll" id="deliveries"></div></section>
+</main>
+<footer>Local sandbox. Not affiliated with the Banco Central do Brasil. Refreshes every 2 seconds.</footer>
+<script>
+"use strict";
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const brl = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const time = (t) => t ? new Date(t).toLocaleTimeString() : "";
+const pill = (s) => `<span class="pill ${esc(s)}">${esc(s)}</span>`;
+const get = (u) => fetch(u).then((r) => r.json());
+
+function table(cols, rows) {
+  if (!rows.length) return `<div class="empty">Nothing yet.</div>`;
+  const head = cols.map((c) => `<th>${esc(c[0])}</th>`).join("");
+  const body = rows.map((r) => "<tr>" + cols.map((c) => c[1](r)).join("") + "</tr>").join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function refresh() {
+  try {
+    const [st, acc, tr, dl] = await Promise.all([
+      get("/admin/stats"), get("/accounts"), get("/pix/transfers?limit=25"), get("/webhooks/deliveries"),
+    ]);
+    document.getElementById("clock").textContent = "sim time " + new Date(st.now).toLocaleString();
+    document.getElementById("stats").innerHTML = [
+      ["Accounts", st.accounts], ["DICT keys", st.keys], ["Transfers", st.transfers], ["Charges", st.charges],
+      ["In flight", brl(st.in_flight_cents)], ["Held by MED", brl(st.held_by_med_cents)],
+      ["Chaos rules", st.chaos_rules], ["Ledger total", brl(st.ledger_total_cents)],
+    ].map(([k, v]) => `<div class="stat"><div class="v">${esc(v)}</div><div class="k">${esc(k)}</div></div>`).join("");
+    document.getElementById("accounts").innerHTML = table([
+      ["ID", (a) => `<td class="mono">${esc(a.id)}</td>`],
+      ["Owner", (a) => `<td>${esc(a.owner_name)}</td>`],
+      ["ISPB / branch / number", (a) => `<td class="mono">${esc(a.ispb)} ${esc(a.branch)} ${esc(a.number)}</td>`],
+      ["Status", (a) => `<td>${pill(a.status)}</td>`],
+      ["Balance", (a) => `<td class="num">${brl(a.balance_cents)}</td>`],
+    ], acc.accounts);
+    document.getElementById("transfers").innerHTML = table([
+      ["Time", (t) => `<td>${time(t.created_at)}</td>`],
+      ["EndToEndId", (t) => `<td class="mono" title="${esc(t.end_to_end_id)}">${esc(t.end_to_end_id.slice(0, 13))}…</td>`],
+      ["From → to", (t) => `<td>${esc(t.payer.account_id)} → ${esc(t.payee.account_id || t.payee.number)}</td>`],
+      ["Amount", (t) => `<td class="num">${brl(t.amount_cents)}</td>`],
+      ["Status", (t) => `<td>${pill(t.status)} ${esc(t.reason)}</td>`],
+    ], tr.transfers);
+    document.getElementById("deliveries").innerHTML = table([
+      ["Created", (d) => `<td>${time(d.created_at)}</td>`],
+      ["Event", (d) => `<td class="mono">${esc(d.event_id)}${d.copy ? " (dup " + d.copy + ")" : ""}</td>`],
+      ["Type", (d) => `<td>${esc(d.event_type)}</td>`],
+      ["Account", (d) => `<td>${esc(d.account_id)}</td>`],
+      ["URL", (d) => `<td class="mono">${esc(d.url)}</td>`],
+      ["Attempts", (d) => `<td class="num">${d.attempts.length}</td>`],
+      ["Last", (d) => { const a = d.attempts[d.attempts.length - 1]; return `<td>${a ? esc(a.status_code || a.error) : ""}</td>`; }],
+      ["Status", (d) => `<td>${pill(d.status)}</td>`],
+    ], dl.deliveries.slice(0, 50));
+  } catch (e) {
+    document.getElementById("clock").textContent = "simulator unreachable";
+  }
+}
+
+document.getElementById("advbtn").addEventListener("click", async () => {
+  await fetch("/admin/clock/advance", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ duration: document.getElementById("adv").value }),
+  });
+  refresh();
+});
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Local workspace that resolves brpay from a sibling checkout.
+go.work
+go.work.sum
+
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+
+# Coverage
+coverage.out
+coverage.html
+*.cov
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

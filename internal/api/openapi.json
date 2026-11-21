@@ -1,0 +1,3185 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "pix-psp-simulator",
+    "version": "0.1.0",
+    "description": "Local sandbox that simulates a Pix PSP, the SPI and the DICT for offline integration testing. Simplified models; not affiliated with the Banco Central do Brasil; not for production.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ],
+  "tags": [
+    {
+      "name": "system"
+    },
+    {
+      "name": "accounts"
+    },
+    {
+      "name": "dict"
+    },
+    {
+      "name": "charges"
+    },
+    {
+      "name": "pix"
+    },
+    {
+      "name": "med"
+    },
+    {
+      "name": "webhooks"
+    },
+    {
+      "name": "admin"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "summary": "Liveness probe",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "uptime_seconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "This document",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "dashboard",
+        "summary": "Web dashboard (HTML)",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts": {
+      "post": {
+        "operationId": "createAccount",
+        "summary": "Open an account",
+        "tags": [
+          "accounts"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listAccounts",
+        "summary": "List accounts",
+        "tags": [
+          "accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Account"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "include_system",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ]
+      }
+    },
+    "/accounts/{id}": {
+      "get": {
+        "operationId": "getAccount",
+        "summary": "Get an account",
+        "tags": [
+          "accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ]
+      }
+    },
+    "/accounts/{id}/deposits": {
+      "post": {
+        "operationId": "deposit",
+        "summary": "Add funds to an account",
+        "tags": [
+          "accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmountRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/{id}/status": {
+      "put": {
+        "operationId": "setAccountStatus",
+        "summary": "Block, close or reactivate an account",
+        "tags": [
+          "accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "ACTIVE",
+                      "BLOCKED",
+                      "CLOSED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Payments to BLOCKED accounts are rejected with AC06 and to CLOSED accounts with AC04."
+      }
+    },
+    "/accounts/{id}/keys": {
+      "get": {
+        "operationId": "accountKeys",
+        "summary": "List the DICT keys of an account",
+        "tags": [
+          "accounts",
+          "dict"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DictEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ]
+      }
+    },
+    "/accounts/{id}/webhook": {
+      "put": {
+        "operationId": "setWebhook",
+        "summary": "Register the account webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "secret": {
+                    "type": "string",
+                    "description": "Generated when omitted."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getWebhook",
+        "summary": "Get the account webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "summary": "Remove the account webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountID"
+          }
+        ]
+      }
+    },
+    "/dict/keys": {
+      "post": {
+        "operationId": "registerKey",
+        "summary": "Register a Pix key",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "account_id"
+                ],
+                "properties": {
+                  "account_id": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "CPF, CNPJ (numeric or alphanumeric), e-mail, +55 phone or EVP. Normalized with brpay."
+                  },
+                  "evp": {
+                    "type": "boolean",
+                    "description": "With an empty key, generate a random EVP key."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dict/keys/{key}": {
+      "get": {
+        "operationId": "lookupKey",
+        "summary": "Look a key up (rate limited per payer)",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictLookup"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Key"
+          },
+          {
+            "$ref": "#/components/parameters/XPayerId"
+          },
+          {
+            "name": "payer_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Owner document is masked as PSP apps show it. Each payer has a token bucket; lookups of missing keys cost extra tokens. Limits are illustrative, not the BCB's."
+      },
+      "delete": {
+        "operationId": "deleteKey",
+        "summary": "Delete a key",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Key"
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/dict/claims": {
+      "post": {
+        "operationId": "openClaim",
+        "summary": "Open an ownership or portability claim",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Claim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "account_id",
+                  "type",
+                  "key"
+                ],
+                "properties": {
+                  "account_id": {
+                    "type": "string",
+                    "description": "Claimer account"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "OWNERSHIP",
+                      "PORTABILITY"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listClaims",
+        "summary": "List claims",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Claim"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dict/claims/{id}": {
+      "get": {
+        "operationId": "getClaim",
+        "summary": "Get a claim",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Claim"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/dict/claims/{id}/{action}": {
+      "post": {
+        "operationId": "actOnClaim",
+        "summary": "Confirm, cancel or complete a claim",
+        "tags": [
+          "dict"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Claim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "confirm",
+                "cancel",
+                "complete"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "account_id"
+                ],
+                "properties": {
+                  "account_id": {
+                    "type": "string",
+                    "description": "Acting account: donor confirms, claimer completes, either cancels."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cob": {
+      "post": {
+        "operationId": "createCharge",
+        "summary": "Create a static or dynamic charge (BR Code)",
+        "tags": [
+          "charges"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Charge"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChargeRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCharges",
+        "summary": "List charges",
+        "tags": [
+          "charges"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "charges": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Charge"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cob/{txid}": {
+      "get": {
+        "operationId": "getCharge",
+        "summary": "Get a charge",
+        "tags": [
+          "charges"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Charge"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TxID"
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "removeCharge",
+        "summary": "Remove an active charge",
+        "tags": [
+          "charges"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Charge"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TxID"
+          }
+        ]
+      }
+    },
+    "/qr/v2/{id}": {
+      "get": {
+        "operationId": "location",
+        "summary": "Dynamic QR code payload",
+        "tags": [
+          "charges"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "description": "The URL embedded in dynamic BR Codes. Returned as plain JSON; real PSPs serve a signed JWS."
+      }
+    },
+    "/pix/transfers": {
+      "post": {
+        "operationId": "createTransfer",
+        "summary": "Start a Pix transfer",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted (status ACSP)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transfer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/XSimFail"
+          },
+          {
+            "$ref": "#/components/parameters/XSimFailProbability"
+          },
+          {
+            "$ref": "#/components/parameters/XSimLatency"
+          },
+          {
+            "$ref": "#/components/parameters/XSimTimeout"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookDuplicates"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookReorder"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          }
+        },
+        "description": "Settles asynchronously after the configured latency. Business failures do not fail the call: the transfer ends RJCT with an ISO reason code and a pix.rejected webhook."
+      },
+      "get": {
+        "operationId": "listTransfers",
+        "summary": "List transfers, newest first",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Transfer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        },
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ]
+      }
+    },
+    "/pix/transfers/{e2eid}": {
+      "get": {
+        "operationId": "getTransfer",
+        "summary": "Get a transfer",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transfer"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/E2EID"
+          }
+        ]
+      }
+    },
+    "/pix/qr-payments": {
+      "post": {
+        "operationId": "payQR",
+        "summary": "Pay a BR Code (copia e cola)",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted (status ACSP)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transfer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XSimFail"
+          },
+          {
+            "$ref": "#/components/parameters/XSimFailProbability"
+          },
+          {
+            "$ref": "#/components/parameters/XSimLatency"
+          },
+          {
+            "$ref": "#/components/parameters/XSimTimeout"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookDuplicates"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookReorder"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QRPaymentRequest"
+              }
+            }
+          }
+        },
+        "description": "The code is linted with brpay; lint errors are returned in the problem's issues array."
+      }
+    },
+    "/pix/transfers/{e2eid}/refunds": {
+      "post": {
+        "operationId": "createRefund",
+        "summary": "Request a devolução (full or partial)",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refund"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/E2EID"
+          },
+          {
+            "$ref": "#/components/parameters/XSimFail"
+          },
+          {
+            "$ref": "#/components/parameters/XSimFailProbability"
+          },
+          {
+            "$ref": "#/components/parameters/XSimLatency"
+          },
+          {
+            "$ref": "#/components/parameters/XSimTimeout"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookDuplicates"
+          },
+          {
+            "$ref": "#/components/parameters/XSimWebhookReorder"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pix/transfers/{e2eid}/refunds/{id}": {
+      "get": {
+        "operationId": "getRefund",
+        "summary": "Get a refund",
+        "tags": [
+          "pix"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refund"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/E2EID"
+          },
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/med/infractions": {
+      "post": {
+        "operationId": "reportInfraction",
+        "summary": "Report a MED infraction",
+        "tags": [
+          "med"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Infraction"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "end_to_end_id"
+                ],
+                "properties": {
+                  "end_to_end_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "FRAUD",
+                      "REFUND_REQUEST"
+                    ]
+                  },
+                  "details": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listInfractions",
+        "summary": "List infractions",
+        "tags": [
+          "med"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "infractions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Infraction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/med/infractions/{id}": {
+      "get": {
+        "operationId": "getInfraction",
+        "summary": "Get an infraction",
+        "tags": [
+          "med"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Infraction"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/med/infractions/{id}/{action}": {
+      "post": {
+        "operationId": "actOnInfraction",
+        "summary": "Move an infraction through the MED state machine",
+        "tags": [
+          "med"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Infraction"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "block",
+                "analyze",
+                "accept",
+                "reject",
+                "cancel"
+              ]
+            }
+          }
+        ],
+        "description": "OPEN -block-> BLOCKED -analyze-> ANALYSIS -accept-> REFUNDED | -reject-> CLOSED; OPEN or BLOCKED -cancel-> CANCELLED. Simplified model."
+      }
+    },
+    "/webhooks/deliveries": {
+      "get": {
+        "operationId": "listDeliveries",
+        "summary": "Webhook delivery log, newest first",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Delivery"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/webhooks/deliveries/{id}": {
+      "get": {
+        "operationId": "getDelivery",
+        "summary": "Get a delivery",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Delivery"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/webhooks/deliveries/{id}/redeliver": {
+      "post": {
+        "operationId": "redeliver",
+        "summary": "Send a finished delivery again",
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "202": {
+            "description": "Scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Delivery"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/admin/stats": {
+      "get": {
+        "operationId": "stats",
+        "summary": "Counters and ledger totals",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clock": {
+      "get": {
+        "operationId": "getClock",
+        "summary": "Simulator clock",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Clock"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clock/advance": {
+      "post": {
+        "operationId": "advanceClock",
+        "summary": "Time travel: move the clock forward",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Clock"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "duration"
+                ],
+                "properties": {
+                  "duration": {
+                    "type": "string",
+                    "examples": [
+                      "90s",
+                      "2h",
+                      "168h"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Pending settlements and webhook retries whose time has come run immediately; charges and claims expire on their next read."
+      }
+    },
+    "/admin/chaos/rules": {
+      "get": {
+        "operationId": "listRules",
+        "summary": "List chaos rules",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ChaosRule"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addRule",
+        "summary": "Add a chaos rule",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChaosRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChaosRule"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "clearRules",
+        "summary": "Remove every chaos rule",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "204": {
+            "description": "Cleared"
+          }
+        }
+      }
+    },
+    "/admin/chaos/rules/{id}": {
+      "delete": {
+        "operationId": "deleteRule",
+        "summary": "Remove a chaos rule",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ]
+      }
+    },
+    "/admin/dict/rate-limit": {
+      "get": {
+        "operationId": "getRateLimit",
+        "summary": "DICT lookup rate-limit policy",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimit"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setRateLimit",
+        "summary": "Replace the rate-limit policy (resets buckets)",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimit"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimit"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/scenarios": {
+      "post": {
+        "operationId": "loadScenario",
+        "summary": "Load a scenario (same format as scenarios/*.json)",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "201": {
+            "description": "Loaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Scenario"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/ledger": {
+      "get": {
+        "operationId": "ledgerPostings",
+        "summary": "Ledger postings",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "postings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Posting"
+                      }
+                    },
+                    "total_cents": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by reference (EndToEndId, refund id, infraction id)."
+          }
+        ]
+      }
+    }
+  },
+  "webhooks": {
+    "pixEvent": {
+      "post": {
+        "summary": "Event delivered to the account webhook",
+        "parameters": [
+          {
+            "name": "X-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "t=<unix>,v1=<hex>"
+          },
+          {
+            "name": "X-Event-Id",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Stable across retries and duplicates"
+          },
+          {
+            "name": "X-Event-Type",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Event type"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges; anything else is retried with exponential backoff and jitter."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "retry_after_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "AmountRequest": {
+        "type": "object",
+        "required": [
+          "amount_cents"
+        ],
+        "properties": {
+          "amount_cents": {
+            "type": "integer"
+          }
+        }
+      },
+      "AccountRequest": {
+        "type": "object",
+        "required": [
+          "owner_name",
+          "document"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string",
+            "description": "CPF or CNPJ (alphanumeric accepted)"
+          },
+          "ispb": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$"
+          },
+          "branch": {
+            "type": "string",
+            "pattern": "^[0-9]{4}$"
+          },
+          "number": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "CACC",
+              "SVGS",
+              "SLRY",
+              "TRAN"
+            ]
+          },
+          "initial_balance_cents": {
+            "type": "integer"
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_document": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "BLOCKED",
+              "CLOSED"
+            ]
+          },
+          "balance_cents": {
+            "type": "integer"
+          },
+          "system": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DictOwner": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          }
+        }
+      },
+      "DictEntry": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "key_type": {
+            "type": "string",
+            "enum": [
+              "CPF",
+              "CNPJ",
+              "EMAIL",
+              "PHONE",
+              "EVP"
+            ]
+          },
+          "owner": {
+            "$ref": "#/components/schemas/DictOwner"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DictLookup": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "key_type": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_tax_id_masked": {
+            "type": "string"
+          },
+          "owner_type": {
+            "type": "string",
+            "enum": [
+              "NATURAL_PERSON",
+              "LEGAL_PERSON"
+            ]
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "account_number": {
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "account_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Claim": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "OWNERSHIP",
+              "PORTABILITY"
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "key_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CONFIRMED",
+              "COMPLETED",
+              "CANCELLED"
+            ]
+          },
+          "claimer": {
+            "$ref": "#/components/schemas/DictOwner"
+          },
+          "donor_account_id": {
+            "type": "string"
+          },
+          "resolution_deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChargeRequest": {
+        "type": "object",
+        "required": [
+          "type",
+          "receiver_account_id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "static",
+              "dynamic"
+            ]
+          },
+          "receiver_account_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "merchant_name": {
+            "type": "string",
+            "maxLength": 25
+          },
+          "merchant_city": {
+            "type": "string",
+            "maxLength": 15
+          },
+          "expires_in_seconds": {
+            "type": "integer"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "Charge": {
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ATIVA",
+              "CONCLUIDA",
+              "REMOVIDA_PELO_USUARIO_RECEBEDOR",
+              "REMOVIDA_PELO_PSP"
+            ]
+          },
+          "receiver_account_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "merchant_name": {
+            "type": "string"
+          },
+          "merchant_city": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "location_id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "brcode": {
+            "type": "string"
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LocationPayload": {
+        "type": "object",
+        "properties": {
+          "calendario": {
+            "type": "object",
+            "properties": {
+              "criacao": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "apresentacao": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiracao": {
+                "type": "integer"
+              }
+            }
+          },
+          "txid": {
+            "type": "string"
+          },
+          "revisao": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valor": {
+            "type": "object",
+            "properties": {
+              "original": {
+                "type": "string"
+              }
+            }
+          },
+          "chave": {
+            "type": "string"
+          },
+          "solicitacaoPagador": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferRequest": {
+        "type": "object",
+        "required": [
+          "from_account_id",
+          "amount_cents"
+        ],
+        "description": "Set exactly one of key, to_account_id or to_account.",
+        "properties": {
+          "from_account_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "to_account_id": {
+            "type": "string"
+          },
+          "to_account": {
+            "type": "object",
+            "properties": {
+              "ispb": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string"
+              }
+            }
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "end_to_end_id": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 140
+          }
+        }
+      },
+      "QRPaymentRequest": {
+        "type": "object",
+        "required": [
+          "from_account_id",
+          "brcode"
+        ],
+        "properties": {
+          "from_account_id": {
+            "type": "string"
+          },
+          "brcode": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "end_to_end_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Party": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "account_number": {
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tax_id_masked": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "Transfer": {
+        "type": "object",
+        "properties": {
+          "end_to_end_id": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "initiation": {
+            "type": "string",
+            "enum": [
+              "MANU",
+              "DICT",
+              "QRES",
+              "QRDN"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACSP",
+              "ACSC",
+              "RJCT"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reason_description": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "refunded_cents": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "payer": {
+            "$ref": "#/components/schemas/Party"
+          },
+          "payee": {
+            "$ref": "#/components/schemas/Party"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expected_settlement_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settled_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refunds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            }
+          },
+          "chaos_rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RefundRequest": {
+        "type": "object",
+        "required": [
+          "amount_cents"
+        ],
+        "properties": {
+          "amount_cents": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "BE08",
+              "MD06",
+              "SL02"
+            ],
+            "default": "MD06"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "Refund": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "end_to_end_id": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "return_reason": {
+            "type": "string",
+            "enum": [
+              "BE08",
+              "FR01",
+              "MD06",
+              "SL02"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACSC",
+              "RJCT"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reason_description": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "infraction_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Infraction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "end_to_end_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "BLOCKED",
+              "ANALYSIS",
+              "REFUNDED",
+              "CLOSED",
+              "CANCELLED"
+            ]
+          },
+          "held_cents": {
+            "type": "integer"
+          },
+          "refund_id": {
+            "type": "string"
+          },
+          "allowed_events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "event": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Delivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "pix.received",
+              "pix.settled",
+              "pix.rejected",
+              "refund.completed"
+            ]
+          },
+          "account_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "copy": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "status_code": {
+                  "type": "integer"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "duration_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "description": "Body of every webhook delivery. Signed with X-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, t + '.' + body)>.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "account_id": {
+            "type": "string"
+          },
+          "data": {
+            "description": "A Transfer, or a Refund for refund.completed."
+          }
+        }
+      },
+      "Stats": {
+        "type": "object",
+        "properties": {
+          "now": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accounts": {
+            "type": "integer"
+          },
+          "keys": {
+            "type": "integer"
+          },
+          "transfers": {
+            "type": "integer"
+          },
+          "charges": {
+            "type": "integer"
+          },
+          "infractions": {
+            "type": "integer"
+          },
+          "ledger_total_cents": {
+            "type": "integer"
+          },
+          "in_flight_cents": {
+            "type": "integer"
+          },
+          "held_by_med_cents": {
+            "type": "integer"
+          },
+          "chaos_rules": {
+            "type": "integer"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "settlement_latency_ms": {
+            "type": "integer"
+          }
+        }
+      },
+      "Clock": {
+        "type": "object",
+        "properties": {
+          "now": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "wall": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "offset": {
+            "type": "string"
+          }
+        }
+      },
+      "ChaosRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "probability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "match": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "transfer",
+                  "qr_payment",
+                  "refund"
+                ]
+              },
+              "from_account": {
+                "type": "string"
+              },
+              "to_account": {
+                "type": "string"
+              },
+              "min_amount_cents": {
+                "type": "integer"
+              },
+              "max_amount_cents": {
+                "type": "integer"
+              }
+            }
+          },
+          "fail": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "boolean"
+          },
+          "latency": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "Go duration string or milliseconds"
+          },
+          "duplicate_webhooks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "reorder_webhooks": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        }
+      },
+      "RateLimit": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "number"
+          },
+          "refill_per_minute": {
+            "type": "number"
+          },
+          "not_found_cost": {
+            "type": "number"
+          }
+        }
+      },
+      "Scenario": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AccountRequest"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "webhook": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "secret": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "account_id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "evp": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "chaos_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChaosRule"
+            }
+          },
+          "dict_rate_limit": {
+            "$ref": "#/components/schemas/RateLimit"
+          }
+        }
+      },
+      "Posting": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "memo": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "AccountID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Key": {
+        "name": "key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Pix key; URL-encode CNPJ slashes or use the clean form."
+      },
+      "TxID": {
+        "name": "txid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "E2EID": {
+        "name": "e2eid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^E[0-9]{8}[0-9]{12}[A-Za-z0-9]{11}$"
+        }
+      },
+      "XPayerId": {
+        "name": "X-Payer-Id",
+        "in": "header",
+        "schema": {
+          "type": "string"
+        },
+        "description": "Identity used for DICT rate limiting (defaults to anonymous)."
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "schema": {
+          "type": "string"
+        },
+        "description": "Retries with the same key and body return the original transfer (200, Idempotent-Replayed: true) for 24h."
+      },
+      "XSimFail": {
+        "name": "X-Sim-Fail",
+        "in": "header",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "AB03",
+            "AC03",
+            "AC04",
+            "AC06",
+            "AM02",
+            "AM04",
+            "BE01",
+            "DS04",
+            "RR04"
+          ]
+        },
+        "description": "Reject with this ISO reason code."
+      },
+      "XSimFailProbability": {
+        "name": "X-Sim-Fail-Probability",
+        "in": "header",
+        "schema": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "description": "Apply X-Sim-Fail with this probability."
+      },
+      "XSimLatency": {
+        "name": "X-Sim-Latency",
+        "in": "header",
+        "schema": {
+          "type": "string"
+        },
+        "description": "Settlement latency override, e.g. 2s."
+      },
+      "XSimTimeout": {
+        "name": "X-Sim-Timeout",
+        "in": "header",
+        "schema": {
+          "type": "boolean"
+        },
+        "description": "true rejects with AB03 after the latency."
+      },
+      "XSimWebhookDuplicates": {
+        "name": "X-Sim-Webhook-Duplicates",
+        "in": "header",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "description": "Extra copies of each resulting webhook (same event id)."
+      },
+      "XSimWebhookReorder": {
+        "name": "X-Sim-Webhook-Reorder",
+        "in": "header",
+        "schema": {
+          "type": "string"
+        },
+        "description": "Random extra delay up to this duration per delivery."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed request (JSON, headers or query)",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict with current state",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Unprocessable": {
+        "description": "Semantically invalid; BR Code lint errors are listed in issues",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limited; see Retry-After",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Not allowed for this account",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    }
+  }
+}
