@@ -118,6 +118,15 @@ func (s *Server) register() {
 	s.handle("GET", "/webhooks/deliveries/{id}", s.getDelivery)
 	s.handle("POST", "/webhooks/deliveries/{id}/redeliver", s.redeliver)
 
+	s.handle("POST", "/sta/documents", s.submitDocument)
+	s.handle("GET", "/sta/documents", s.listDocuments)
+	s.handle("GET", "/sta/documents/{id}", s.getDocument)
+	s.handle("GET", "/sta/participants", s.listParticipants)
+	s.handle("PUT", "/sta/participants/{cnpj}", s.putParticipant)
+	s.handle("GET", "/sta/participants/{cnpj}", s.getParticipant)
+	s.handle("GET", "/sta/participants/{cnpj}/drafts/4111", s.draft4111)
+	s.handle("GET", "/admin/calendar", s.calendar)
+
 	s.handle("GET", "/admin/stats", s.stats)
 	s.handle("GET", "/admin/clock", s.getClock)
 	s.handle("POST", "/admin/clock/advance", s.advanceClock)

@@ -206,6 +206,8 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 		reason = iso.AC06
 	case s.cfg.MaxTransferCents > 0 && r.AmountCents > s.cfg.MaxTransferCents:
 		reason = iso.AM02
+	case s.STA.Blocked(payer.ISPB):
+		reason = iso.RR04 // the payer's PSP is desenquadrado (see internal/sta)
 	case dec.Fail != "":
 		reason = dec.Fail
 	}

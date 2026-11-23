@@ -17,11 +17,13 @@ import (
 	"github.com/victorcondackdev/brpay/document"
 	"github.com/victorcondackdev/brpay/pix"
 
+	"github.com/victorcondackdev/pix-psp-simulator/internal/bizday"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/chaos"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/clock"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/dict"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/ledger"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/notify"
+	"github.com/victorcondackdev/pix-psp-simulator/internal/sta"
 	"github.com/victorcondackdev/pix-psp-simulator/webhook"
 )
 
@@ -110,8 +112,10 @@ type Sim struct {
 	Notify *notify.Dispatcher
 	// Telemetry holds the Prometheus metrics served at /metrics.
 	Telemetry *Telemetry
-	log       *slog.Logger
-	rand      io.Reader
+	// STA receives regulatory documents (CADOC 4111 and 4010).
+	STA  *sta.Service
+	log  *slog.Logger
+	rand io.Reader
 
 	mu          sync.Mutex
 	transfers   map[string]*Transfer
@@ -164,6 +168,8 @@ func New(cfg Config, deps Deps) *Sim {
 		transfers: map[string]*Transfer{}, charges: map[string]*Charge{}, locations: map[string]string{},
 		infractions: map[string]*Infraction{},
 	}
+	s.STA = sta.New(s, bizday.Calendar{}, sta.Config{})
+	s.STA.OnSubmit(func(doc, status string) { s.Telemetry.STASubmissions.Inc(doc, status) })
 	s.registerGauges()
 	return s
 }

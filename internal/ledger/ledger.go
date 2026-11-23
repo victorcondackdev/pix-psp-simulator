@@ -253,3 +253,27 @@ func (l *Ledger) Total() int64 {
 	}
 	return t
 }
+
+// BalanceAt returns the balance of an account after every posting made at or
+// before t, by replaying the journal. Regulatory reports use it to read an
+// end-of-day balance after the day is over.
+func (l *Ledger) BalanceAt(id string, t time.Time) (int64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if _, ok := l.accounts[id]; !ok {
+		return 0, fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	var b int64
+	for _, p := range l.postings {
+		if p.At.After(t) {
+			break // postings are appended in clock order
+		}
+		if p.From == id {
+			b -= p.Amount
+		}
+		if p.To == id {
+			b += p.Amount
+		}
+	}
+	return b, nil
+}

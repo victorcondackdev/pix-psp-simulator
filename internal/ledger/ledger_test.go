@@ -149,3 +149,27 @@ func TestConcurrentMovesConserveMoney(t *testing.T) {
 		t.Fatalf("customers=%d total=%d", customers, l.Total())
 	}
 }
+
+func TestBalanceAt(t *testing.T) {
+	c := clock.NewFake(time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
+	l := New(c)
+	if _, err := l.Open(Account{ID: "a", ISPB: "12345678", Type: Checking}); err != nil {
+		t.Fatal(err)
+	}
+	t1 := c.Now()
+	_, _ = l.Move(Funding, "a", 500, "r1", "")
+	c.Advance(time.Hour)
+	_, _ = l.Move("a", Settlement, 200, "r2", "")
+	if b, _ := l.BalanceAt("a", t1.Add(-time.Second)); b != 0 {
+		t.Error(b)
+	}
+	if b, _ := l.BalanceAt("a", t1.Add(time.Minute)); b != 500 {
+		t.Error(b)
+	}
+	if b, _ := l.BalanceAt("a", c.Now()); b != 300 {
+		t.Error(b)
+	}
+	if _, err := l.BalanceAt("nope", c.Now()); err == nil {
+		t.Error("unknown account")
+	}
+}

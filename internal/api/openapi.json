@@ -38,6 +38,10 @@
     },
     {
       "name": "admin"
+    },
+    {
+      "name": "sta",
+      "description": "Sistema de Transmissão de Arquivos (simulated): receives CADOC 4111 (Saldos Contábeis Diários) and 4010 (Balancete Patrimonial Analítico), validates them and reconciles them against the simulator books."
     }
   ],
   "paths": {
@@ -1878,6 +1882,322 @@
           }
         }
       }
+    },
+    "/sta/documents": {
+      "post": {
+        "operationId": "submitDocument",
+        "summary": "Submit a CADOC document",
+        "tags": [
+          "sta"
+        ],
+        "description": "Receives a 4111 or 4010 XML file and returns its protocol, ACEITO or REJEITADO with the list of errors. Rules: header fields, 10-digit accounts, amount format, business-day data-base, I/S replacement, 4111 sequence, deadline (fora_do_prazo), reconciliation with the participant mapping and Pix volume, and 4111 × 4010 agreement on the last business day of the month. The element names are the simulator's, not the official XSD.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string",
+                "examples": [
+                  "<documento codigoDocumento=\"4111\" cnpj=\"12345678\" dataBase=\"2026-11-19\" tipoRemessa=\"I\"><contas><conta codigoConta=\"1120000006\" saldoDia=\"1500.00\"/></contas></documento>"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Protocol (accepted or rejected)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/STAProtocol"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listDocuments",
+        "summary": "List protocols",
+        "tags": [
+          "sta"
+        ],
+        "parameters": [
+          {
+            "name": "cnpj",
+            "in": "query",
+            "required": false,
+            "description": "Filter by CNPJ base",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "codigo_documento",
+            "in": "query",
+            "required": false,
+            "description": "4111 or 4010",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Protocols, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/STAProtocol"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sta/documents/{id}": {
+      "get": {
+        "operationId": "getDocument",
+        "summary": "Get a protocol",
+        "tags": [
+          "sta"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Protocol",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Protocol",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/STAProtocol"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/sta/participants": {
+      "get": {
+        "operationId": "listParticipants",
+        "summary": "List participants",
+        "tags": [
+          "sta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Participants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participants": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/STAParticipant"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sta/participants/{cnpj}": {
+      "put": {
+        "operationId": "putParticipant",
+        "summary": "Register a participant",
+        "tags": [
+          "sta"
+        ],
+        "description": "Registers who reports, how its Cosif accounts map to simulator accounts and whether non-compliance blocks its Pix.",
+        "parameters": [
+          {
+            "name": "cnpj",
+            "in": "path",
+            "required": true,
+            "description": "CNPJ base, 8 characters",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/STAParticipant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Participant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/STAParticipant"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getParticipant",
+        "summary": "Participant standing",
+        "tags": [
+          "sta"
+        ],
+        "description": "Missing 4111 days and 4010 months, the next 4111 deadline and whether the participant is desenquadrado.",
+        "parameters": [
+          {
+            "name": "cnpj",
+            "in": "path",
+            "required": true,
+            "description": "CNPJ base",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/STAStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/sta/participants/{cnpj}/drafts/4111": {
+      "get": {
+        "operationId": "draft4111",
+        "summary": "Expected 4111",
+        "tags": [
+          "sta"
+        ],
+        "description": "The 4111 the simulator expects for a data-base (default: previous business day), built from its own books: a reference file to diff against.",
+        "parameters": [
+          {
+            "name": "cnpj",
+            "in": "path",
+            "required": true,
+            "description": "CNPJ base",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "data_base",
+            "in": "query",
+            "required": false,
+            "description": "AAAA-MM-DD",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "XML document",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      }
+    },
+    "/admin/calendar": {
+      "get": {
+        "operationId": "calendar",
+        "summary": "Business-day calendar",
+        "tags": [
+          "admin"
+        ],
+        "description": "National holidays and SFN non-business days used for regulatory deadlines.",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "description": "Year (default: current)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
     }
   },
   "webhooks": {
@@ -3014,6 +3334,167 @@
           "at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "STAError": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "examples": [
+              "E040"
+            ]
+          },
+          "campo": {
+            "type": "string"
+          },
+          "mensagem": {
+            "type": "string"
+          }
+        }
+      },
+      "STAProtocol": {
+        "type": "object",
+        "properties": {
+          "protocolo": {
+            "type": "string"
+          },
+          "codigo_documento": {
+            "type": "string",
+            "enum": [
+              "4111",
+              "4010"
+            ]
+          },
+          "cnpj": {
+            "type": "string"
+          },
+          "data_base": {
+            "type": "string"
+          },
+          "tipo_remessa": {
+            "type": "string",
+            "enum": [
+              "I",
+              "S"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACEITO",
+              "REJEITADO"
+            ]
+          },
+          "erros": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/STAError"
+            }
+          },
+          "linhas": {
+            "type": "integer"
+          },
+          "recebido_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "prazo": {
+            "type": "string",
+            "format": "date"
+          },
+          "fora_do_prazo": {
+            "type": "boolean"
+          },
+          "substitui": {
+            "type": "string"
+          },
+          "substituido_por": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "STAParticipant": {
+        "type": "object",
+        "properties": {
+          "cnpj": {
+            "type": "string",
+            "description": "CNPJ base (8 characters); taken from the path"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reconcile": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "conta": {
+                  "type": "string",
+                  "description": "Cosif account, 10 digits"
+                },
+                "account_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "reconcile_volume": {
+            "type": "boolean",
+            "description": "Check the 3.0.9.70 accounts against the Pix volume settled for the ISPB"
+          },
+          "enforce": {
+            "type": "boolean",
+            "description": "Reject outgoing Pix of the ISPB with RR04 while desenquadrado"
+          },
+          "since": {
+            "type": "string",
+            "description": "First month (AAAA-MM) for which a 4010 is owed"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "STAStatus": {
+        "type": "object",
+        "properties": {
+          "participant": {
+            "$ref": "#/components/schemas/STAParticipant"
+          },
+          "desenquadrado": {
+            "type": "boolean"
+          },
+          "missing_4010": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_4111": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_4111_due": {
+            "type": "string",
+            "format": "date"
+          },
+          "last_accepted_4111": {
+            "type": "string",
+            "format": "date"
           }
         }
       }
