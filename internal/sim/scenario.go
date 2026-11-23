@@ -11,6 +11,7 @@ import (
 	"github.com/victorcondackdev/pix-psp-simulator/internal/chaos"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/dict"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/ledger"
+	"github.com/victorcondackdev/pix-psp-simulator/internal/sta"
 )
 
 // Scenario seeds the simulator: accounts (with balances and webhooks),
@@ -22,6 +23,10 @@ type Scenario struct {
 	Keys        []ScenarioKey     `json:"keys,omitempty"`
 	ChaosRules  []chaos.Rule      `json:"chaos_rules,omitempty"`
 	RateLimit   *dict.RateLimit   `json:"dict_rate_limit,omitempty"`
+	// Limits sets accounts' own limits, by account ID.
+	Limits map[string]Limits `json:"limits,omitempty"`
+	// STAParticipants registers institutions that report CADOCs.
+	STAParticipants []sta.Participant `json:"sta_participants,omitempty"`
 }
 
 // ScenarioAccount is an account to create.
@@ -88,6 +93,21 @@ func (s *Sim) LoadScenario(sc Scenario) error {
 	}
 	if sc.RateLimit != nil {
 		s.DICT.Limiter.SetConfig(*sc.RateLimit)
+	}
+	ids := make([]string, 0, len(sc.Limits))
+	for id := range sc.Limits {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if _, err := s.SetLimits(id, sc.Limits[id]); err != nil {
+			return fmt.Errorf("limits[%s]: %w", id, err)
+		}
+	}
+	for i, p := range sc.STAParticipants {
+		if _, err := s.STA.PutParticipant(p); err != nil {
+			return fmt.Errorf("sta_participants[%d]: %w", i, err)
+		}
 	}
 	return nil
 }

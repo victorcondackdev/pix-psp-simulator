@@ -60,3 +60,27 @@ func TestPixPorAproximacao(t *testing.T) {
 		t.Fatal("metrics")
 	}
 }
+
+func TestScenarioLimitsAndSTA(t *testing.T) {
+	e := newEnv(t, Config{})
+	sc, err := ParseScenario([]byte(`{"name":"reg","limits":{"bob":{"night_per_transaction_cents":500}},
+		"sta_participants":[{"cnpj":"99999999","ispb":"99999999","reconcile":[{"conta":"1120000006","account_ids":["alice"]}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.LoadScenario(sc); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := e.Limits("bob"); l.NightPerTxCents != 500 {
+		t.Fatal(l)
+	}
+	if p, err := e.STA.Participant("99999999"); err != nil || len(p.Reconcile) != 1 {
+		t.Fatal(p, err)
+	}
+	for _, bad := range []string{`{"limits":{"ghost":{}}}`, `{"sta_participants":[{"cnpj":"x"}]}`} {
+		sc, _ := ParseScenario([]byte(bad))
+		if err := e.LoadScenario(sc); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+}

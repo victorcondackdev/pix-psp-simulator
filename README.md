@@ -42,7 +42,13 @@ generation and document masking.
 | Payments | By key, by account details (manual), by account ID, or by "copia e cola" (decoded and linted; lint errors come back as structured issues) |
 | Settlement | Asynchronous, configurable latency, `ACSP` then `ACSC` or `RJCT` with ISO 20022 reason codes, on a double-entry in-memory ledger (int64 cents) |
 | Devoluções | Full or partial, multiple per transfer, up to the original amount (`BE08`, `MD06`, `SL02`) |
-| MED | Infraction report, cautionary block, analysis, refund (`FR01`) or release, as an explicit state machine |
+| MED 2.0 | Infraction report, cautionary block that follows the money through up to 5 accounts, analysis, refund (`FR01`) or release, block that lapses after 72h, as an explicit state machine; `med_version: "1.0"` keeps the payee-only block |
+| Regulator (STA) | Receives CADOC 4111 (Saldos Contábeis Diários) and 4010 (Balancete) XML, validates layout, business-day data-base, I/S replacement, sequence and deadline, reconciles balances and Pix volume against its own books, and rejects the Pix of a desenquadrado PSP with `RR04` |
+| Pix Automático | Recurrences proposed by the receiver and approved by the payer (with its own cap), one charge per period debited on the due date, daily retries on `AM04`, cancellation by either party |
+| Pix por aproximação | NFC payments of a BR Code from a device, with the payer's per-transaction, daily and night limits |
+| Fraud risk | Every DICT lookup carries an explainable 0-100 indicator of the key owner (new key or account, MED marks, fan-in, pass-through) |
+| Statements | `camt.053.001.08` statement per account and day, one entry per posting, for line-by-line reconciliation |
+| Observability | Prometheus `/metrics` (no dependencies), W3C `traceparent` continued from the caller, returned on every response and sent on the webhooks of the transfer, `trace_id` in every log line |
 | Webhooks | `pix.received`, `pix.settled`, `pix.rejected`, `refund.completed`; HMAC-SHA256 signatures; retries with exponential backoff and jitter; delivery log; redelivery |
 | Chaos | Per-request headers and global rules: forced rejection codes, probabilistic timeouts, latency, duplicate and out-of-order webhooks |
 | Time travel | `POST /admin/clock/advance` moves the simulator clock; due settlements and retries run immediately, charges and claims expire |
@@ -200,8 +206,98 @@ curl -s -X POST localhost:8080/med/infractions/inf_.../analyze
 curl -s -X POST localhost:8080/med/infractions/inf_.../accept   # held funds go back to the payer (FR01)
 ```
 
+**9. Report to the regulator.** Register the PSP with the simulated STA,
+mapping a Cosif account to the simulator accounts that hold its money, then
+fetch the 4111 the simulator expects for yesterday and send it:
+
+```sh
+curl -s -X PUT localhost:8080/sta/participants/99999999 -H 'Content-Type: application/json' -d '{
+  "ispb": "99999999", "reconcile": [{ "conta": "1120000006", "account_ids": ["alice", "bob", "padaria"] }],
+  "reconcile_volume": true
+}'
+curl -s localhost:8080/sta/participants/99999999/drafts/4111 > 4111.xml
+curl -s localhost:8080/sta/documents -H 'Content-Type: application/xml' --data-binary @4111.xml
+# { "protocolo": "STA20261123000001", "status": "ACEITO", "prazo": "2026-11-26", "fora_do_prazo": false, ... }
+curl -s localhost:8080/sta/participants/99999999   # missing days and months, desenquadrado or not
+```
+
 The full API, including request and response schemas and the webhook payload,
 is in [`/openapi.json`](internal/api/openapi.json).
+
+## Regulator side: STA and CADOCs
+
+`POST /sta/documents` plays the Banco Central's Sistema de Transmissão de
+Arquivos for two accounting documents. Every file gets a protocol, `ACEITO`
+or `REJEITADO`, with the errors listed the way a processing report would:
+
+| Rule | 4111 (daily) | 4010 (monthly) |
+|------|--------------|----------------|
+| Header | `codigoDocumento`, `cnpj` (8-character CNPJ base), `dataBase` (`AAAA-MM-DD` / `AAAA-MM`), `tipoRemessa` `I` or `S` | same |
+| Lines | `conta` with 10 digits, unique; `saldoDia` with up to 18 digits and 2 decimals after a dot | `saldo`, same format |
+| Data-base | A business day that is over; weekends and national holidays are refused (their volume goes into the next business day) | A closed month |
+| Replacement | `I` when nothing was accepted for the date, `S` to replace an accepted file | same |
+| Sequence | The previous business day must be accepted first | |
+| Deadline | 3rd business day after the data-base; later files are accepted with `fora_do_prazo` | Last business day of the following month (a simulator assumption) |
+| Reconciliation | Mapped Cosif accounts must equal the simulator balances at the end of the day (journal replay); the 3.0.9.70 accounts must equal the Pix volume settled for the ISPB in the month | |
+| Cross-check | On the last business day of a month, balances must agree with the accepted 4010 | Balances must agree with the 4111 of the month's last business day |
+
+A participant that owes a 4010 past its deadline is **desenquadrado**; with
+`"enforce": true` its outgoing Pix end `RJCT` with `RR04` until the 4010 is
+accepted. The calendar (national holidays and the days the financial system
+does not operate, in Brasília time) is at `GET /admin/calendar`. Header
+fields and rules follow the published 4111 filling instructions; the XML
+element names (`<documento>`, `<contas>`, `<conta>`) are the simulator's, so
+validate a real file against the Banco Central's XSD.
+
+## MED 2.0
+
+With MED 2.0 (the default), blocking an infraction blocks what the payee
+still has and follows the rest, first in first out, into the transfers the
+payee made after receiving the money, breadth first, up to
+`-med-max-accounts` accounts (5). The infraction's `trace` lists every hop
+(depth, account, ISPB, the transfer that brought the money there, traced and
+held amounts). Accepting returns everything that was blocked to the victim
+in one `FR01` devolução; rejecting or cancelling releases every hop. A block
+that nobody analyses within `-med-block-window` (72h) lapses and the
+infraction ends `EXPIRED`. Funds traced back to the victim are not blocked.
+Accepted infractions become fraud marks in the DICT `fraud_risk` of every
+account they reached.
+
+## Pix Automático and Pix por aproximação
+
+```sh
+curl -s localhost:8080/pix/automatico/recurrences -H 'Content-Type: application/json' -d '{
+  "receiver_account_id": "padaria", "payer_account_id": "alice", "frequency": "MONTHLY",
+  "start_date": "2026-12-01", "max_amount_cents": 9000, "description": "assinatura"
+}'
+curl -s -X POST localhost:8080/pix/automatico/recurrences/rec_.../approve -d '{"payer_max_amount_cents": 5000}'
+curl -s localhost:8080/pix/automatico/recurrences/rec_.../charges -d '{"amount_cents": 4990, "due_date": "2026-12-05"}'
+# debited at 06:00 on the due date (try POST /admin/clock/advance), retried daily on AM04
+```
+
+`POST /pix/proximity-payments` takes the same body as `/pix/qr-payments`
+plus a `device_id` and enforces the payer's limits from
+`PUT /accounts/{id}/limits` (`proximity_per_transaction_cents`,
+`proximity_daily_cents`, `night_per_transaction_cents` from 20h to 6h).
+There is no fixed cap on the amount. The notice window, retry count, debit
+hour and night period are simulator settings, not a statement of the rules.
+
+## Observability
+
+- `GET /metrics` serves Prometheus text format: `pixsim_http_requests_total`
+  and `pixsim_http_request_duration_seconds` by route,
+  `pixsim_transfers_total{status,reason,initiation}`,
+  `pixsim_settlement_latency_seconds`, `pixsim_dict_lookups_total`,
+  `pixsim_webhook_attempts_total`, `pixsim_med_*`, `pixsim_sta_submissions_total`,
+  `pixsim_automatico_*`, `pixsim_proximity_payments_total`, and gauges for
+  system balances, in-flight transfers, open infractions and pending
+  deliveries. `pixsim_ledger_total_cents` other than 0 is a bug.
+- A request's `traceparent` is continued (or a trace is started), echoed in
+  the response, stored with the transfer and sent on its webhooks, so one
+  Pix is one trace from the PSP's API call to its webhook consumer. Log
+  lines carry `trace_id` and `span_id`.
+- `GET /iso/camt.053?account_id=&date=` returns the day's statement of an
+  account for reconciliation.
 
 ## Verifying webhooks
 
@@ -211,7 +307,8 @@ Every delivery carries:
 |--------|---------|
 | `X-Signature` | `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>` |
 | `X-Event-Id` | Stable across retries and chaos duplicates: deduplicate on it |
-| `X-Event-Type` | `pix.received`, `pix.settled`, `pix.rejected`, `refund.completed` |
+| `X-Event-Type` | `pix.received`, `pix.settled`, `pix.rejected`, `refund.completed`, `automatico.recurrence.updated`, `automatico.charge.updated` |
+| `traceparent` | W3C trace context of the request that created the transfer (when it had one) |
 | `X-Delivery-Id`, `X-Delivery-Attempt` | Which copy and which try this is |
 
 Import the helper instead of re-implementing it:
@@ -261,11 +358,14 @@ Supported reason codes, plus those the simulator produces on its own:
 | `AB03` | Settlement aborted due to timeout | Chaos only |
 | `BE01` | Inconsistent with end customer | Chaos only |
 | `DS04` | Order rejected | Chaos only |
-| `RR04` | Regulatory reason | Chaos only |
+| `RR04` | Regulatory reason | The payer's PSP is desenquadrado at the STA and its participant has `enforce` on |
 
 ## Scenario files
 
-Scenarios seed accounts, keys, webhooks, chaos rules and the DICT rate limit.
+Scenarios seed accounts, keys, webhooks, chaos rules, the DICT rate limit,
+account limits (`"limits": {"alice": {"night_per_transaction_cents": 100000}}`)
+and STA participants (`"sta_participants": [...]`, the body of
+`PUT /sta/participants/{cnpj}` plus `cnpj`).
 Load them at startup (`-scenarios 'scenarios/*.json'`, applied in file-name
 order) or at runtime with `POST /admin/scenarios`. Unknown fields are
 rejected, so typos fail loudly.
@@ -321,6 +421,8 @@ Every flag has a `PIXSIM_*` environment variable (`-settlement-latency` is
 | `-max-transfer-cents` | `0` | Larger transfers are rejected with `AM02` (0 disables) |
 | `-scenarios` | | Comma-separated files or globs |
 | `-seed` | `0` | Seed for chaos probabilities and jitter; set it for reproducible runs |
+| `-med-block-window` | `72h` | How long an unanalysed MED block lasts |
+| `-med-max-accounts` | `5` | Accounts MED 2.0 tracing may visit, payee included |
 | `-webhook-max-attempts` | `6` | Attempts per delivery |
 | `-webhook-base-backoff` | `1s` | First retry delay; doubles each attempt, capped at 5m |
 | `-webhook-timeout` | `5s` | Per-attempt timeout |
@@ -353,14 +455,19 @@ Layout:
 cmd/pixsim            binary: flags, env, graceful shutdown
 webhook/              public: Sign, Verify, Event (import this in consumers)
 internal/api          HTTP handlers, problem+json, middleware, OpenAPI, dashboard
-internal/sim          accounts, transfers, charges, refunds, MED, scenarios
+internal/sim          accounts, transfers, charges, refunds, MED 2.0, Pix Automático,
+                      aproximação, fraud risk, statements, scenarios, telemetry
+internal/sta          simulated STA: CADOC 4111 and 4010
+internal/bizday       business-day calendar (Brasília)
+internal/metrics      Prometheus exposition, no dependencies
+internal/trace        W3C trace context
 internal/dict         DICT keys, claims, rate limiting
 internal/ledger       double-entry ledger
 internal/notify       webhook delivery with retries
 internal/chaos        rules and header overrides
 internal/clock        real, fake and virtual clocks
 internal/fsm          transition tables
-internal/iso          ISO 20022 status and reason codes
+internal/iso          ISO 20022 status and reason codes, camt.053
 examples/             webhook receiver that verifies and deduplicates
 scenarios/            example scenario files
 ```
@@ -379,12 +486,14 @@ make docker
 
 This project is not affiliated with, endorsed by or connected to the Banco
 Central do Brasil or any PSP. It implements simplified models of Pix, the
-SPI, the DICT, devoluções and MED for development and testing; message
-formats, state machines, limits, rate-limit policies and reason-code usage
-are approximations chosen to be useful in tests, not a reference
-implementation of the regulations or of any participant's behaviour. The
-dynamic QR payload is served as plain JSON rather than a signed JWS, and there
-is no mTLS, no ISO 20022 XML and no persistence. Do not use it in production
+SPI, the DICT, devoluções, MED, Pix Automático, Pix por aproximação and the
+STA for development and testing; message formats, state machines, limits,
+deadlines, rate-limit policies, fraud indicators and reason-code usage are
+approximations chosen to be useful in tests, not a reference implementation
+of the regulations or of any participant's behaviour. The dynamic QR payload
+is served as plain JSON rather than a signed JWS, CADOC files use the
+simulator's own element names, the only ISO 20022 XML is the camt.053
+statement, and there is no mTLS and no persistence. Do not use it in production
 or with real customer data.
 
 ## License
