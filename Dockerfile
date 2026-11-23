@@ -6,8 +6,9 @@ ENV CGO_ENABLED=0 GOWORK=off
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-# go.sum is produced by `go mod tidy` (CI runs it before building the image).
-RUN test -f go.sum || go mod tidy
+# go.sum is not committed yet: always tidy so every package's checksum is
+# recorded (a bare `go mod download` only records go.mod hashes).
+RUN go mod tidy
 ARG VERSION=dev
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/pixsim ./cmd/pixsim \
  && go build -trimpath -ldflags "-s -w" -o /out/webhook-receiver ./examples/webhook-receiver
