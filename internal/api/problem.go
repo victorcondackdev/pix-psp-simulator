@@ -13,6 +13,7 @@ import (
 
 	"github.com/victorcondackdev/pix-psp-simulator/internal/dict"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/sim"
+	"github.com/victorcondackdev/pix-psp-simulator/internal/sta"
 )
 
 // Problem is an RFC 9457 problem details object.
@@ -81,6 +82,15 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 			p.Issues = append(p.Issues, Issue{Severity: is.Severity.String(), Field: is.Field, Message: is.Message})
 		}
 		writeProblemValue(w, r, p)
+		return
+	}
+	var inv *sta.InvalidError
+	if errors.As(err, &inv) {
+		writeProblem(w, r, http.StatusUnprocessableEntity, "invalid_participant", inv.Error())
+		return
+	}
+	if errors.Is(err, sta.ErrNotFound) {
+		writeProblem(w, r, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
 	var rl *dict.RateLimitError

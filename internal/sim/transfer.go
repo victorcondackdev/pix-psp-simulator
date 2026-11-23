@@ -60,6 +60,11 @@ type Transfer struct {
 	SettledAt         *time.Time `json:"settled_at,omitempty"`
 	Refunds           []Refund   `json:"refunds"`
 	Chaos             []string   `json:"chaos_rules,omitempty"`
+	Traceparent       string     `json:"traceparent,omitempty"`
+	// AutomaticChargeID links a Pix Automático debit to its charge.
+	AutomaticChargeID string `json:"automatic_charge_id,omitempty"`
+	// Proximity marks a Pix por aproximação (NFC) payment and its device.
+	Proximity *ProximityInfo `json:"proximity,omitempty"`
 
 	reserved bool
 	pending  string // reason decided at initiation, applied at settlement
@@ -90,10 +95,15 @@ type TransferRequest struct {
 	AmountCents   int64       `json:"amount_cents"`
 	EndToEndID    string      `json:"end_to_end_id,omitempty"`
 	Description   string      `json:"description,omitempty"`
+	// Traceparent is the W3C trace context of the request that created the
+	// transfer (set by the HTTP layer); webhooks about the transfer carry it.
+	Traceparent string `json:"-"`
 
 	txid       string
 	initiation string
 	chargeTx   string
+	autoCharge string
+	proximity  *ProximityInfo
 }
 
 // destination resolves the payee; a nil account with a reason means the
@@ -161,6 +171,11 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 	if len(r.Description) > 140 {
 		return Transfer{}, invalid("invalid_description", "description must be at most 140 characters")
 	}
+	if r.proximity != nil {
+		if err := s.checkProximity(payer.ID, r.AmountCents, r.proximity); err != nil {
+			return Transfer{}, err
+		}
+	}
 	payee, payeeAcct, reason, err := s.destination(r)
 	if err != nil {
 		return Transfer{}, err
@@ -202,6 +217,8 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 		reason = iso.AC06
 	case s.cfg.MaxTransferCents > 0 && r.AmountCents > s.cfg.MaxTransferCents:
 		reason = iso.AM02
+	case s.STA.Blocked(payer.ISPB):
+		reason = iso.RR04 // the payer's PSP is desenquadrado (see internal/sta)
 	case dec.Fail != "":
 		reason = dec.Fail
 	}
@@ -209,8 +226,9 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 	t := &Transfer{
 		EndToEndID: e2e, TxID: r.txid, Initiation: r.initiation, Status: iso.StatusPending,
 		AmountCents: r.AmountCents, Description: r.Description, Payer: partyOf(payer), Payee: payee,
-		CreatedAt: now, SettleAt: now.Add(latency), Refunds: []Refund{}, Chaos: dec.Rules,
-		pending: reason, notify: notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder},
+		CreatedAt: now, SettleAt: now.Add(latency), Refunds: []Refund{}, Chaos: dec.Rules, Traceparent: r.Traceparent,
+		AutomaticChargeID: r.autoCharge, Proximity: r.proximity,
+		pending: reason, notify: notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder, Traceparent: r.Traceparent},
 	}
 
 	s.mu.Lock()
@@ -270,11 +288,18 @@ func (s *Sim) settle(e2e, chargeTx string) {
 	if chargeTx != "" {
 		s.finishChargeLocked(chargeTx, e2e, t.Status == iso.StatusSettled)
 	}
+	afterAuto := func() {}
+	if t.AutomaticChargeID != "" {
+		afterAuto = s.finishAutoLocked(t.AutomaticChargeID, AutoAttempt{At: now, EndToEndID: e2e, Status: t.Status, Reason: t.Reason})
+	}
 	snap := t.snapshot()
+	s.Telemetry.Transfers.Inc(snap.Status, snap.Reason, snap.Initiation)
+	s.Telemetry.SettlementLatency.ObserveDuration(now.Sub(snap.CreatedAt), snap.Status)
 	var ids [2]string
 	ids[0] = s.nextEventID()
 	ids[1] = s.nextEventID()
 	s.mu.Unlock()
+	afterAuto()
 
 	if snap.Status == iso.StatusSettled {
 		s.publish(ids[0], webhook.EventPixSettled, snap.Payer.AccountID, snap, t.notify)

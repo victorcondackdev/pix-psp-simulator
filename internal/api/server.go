@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +74,7 @@ func (s *Server) Routes() []Route { return append([]Route(nil), s.routes...) }
 
 func (s *Server) register() {
 	s.handle("GET", "/healthz", s.healthz)
+	s.handle("GET", "/metrics", s.metrics)
 	s.handle("GET", "/openapi.json", s.openapi)
 	s.handle("GET", "/{$}", s.dashboard)
 
@@ -107,6 +109,18 @@ func (s *Server) register() {
 	s.handle("POST", "/pix/transfers/{e2eid}/refunds", s.createRefund)
 	s.handle("GET", "/pix/transfers/{e2eid}/refunds/{id}", s.getRefund)
 
+	s.handle("POST", "/pix/proximity-payments", s.payProximity)
+	s.handle("GET", "/accounts/{id}/limits", s.getLimits)
+	s.handle("PUT", "/accounts/{id}/limits", s.setLimits)
+
+	s.handle("POST", "/pix/automatico/recurrences", s.createRecurrence)
+	s.handle("GET", "/pix/automatico/recurrences", s.listRecurrences)
+	s.handle("GET", "/pix/automatico/recurrences/{id}", s.getRecurrence)
+	s.handle("POST", "/pix/automatico/recurrences/{id}/charges", s.scheduleAutoCharge)
+	s.handle("POST", "/pix/automatico/recurrences/{id}/{action}", s.actOnRecurrence)
+	s.handle("GET", "/pix/automatico/charges/{id}", s.getAutoCharge)
+	s.handle("POST", "/pix/automatico/charges/{id}/cancel", s.cancelAutoCharge)
+
 	s.handle("POST", "/med/infractions", s.reportInfraction)
 	s.handle("GET", "/med/infractions", s.listInfractions)
 	s.handle("GET", "/med/infractions/{id}", s.getInfraction)
@@ -115,6 +129,16 @@ func (s *Server) register() {
 	s.handle("GET", "/webhooks/deliveries", s.listDeliveries)
 	s.handle("GET", "/webhooks/deliveries/{id}", s.getDelivery)
 	s.handle("POST", "/webhooks/deliveries/{id}/redeliver", s.redeliver)
+
+	s.handle("POST", "/sta/documents", s.submitDocument)
+	s.handle("GET", "/sta/documents", s.listDocuments)
+	s.handle("GET", "/sta/documents/{id}", s.getDocument)
+	s.handle("GET", "/sta/participants", s.listParticipants)
+	s.handle("PUT", "/sta/participants/{cnpj}", s.putParticipant)
+	s.handle("GET", "/sta/participants/{cnpj}", s.getParticipant)
+	s.handle("GET", "/sta/participants/{cnpj}/drafts/4111", s.draft4111)
+	s.handle("GET", "/admin/calendar", s.calendar)
+	s.handle("GET", "/iso/camt.053", s.camt053)
 
 	s.handle("GET", "/admin/stats", s.stats)
 	s.handle("GET", "/admin/clock", s.getClock)
@@ -147,7 +171,24 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.mux.ServeHTTP(w, r)
 	})
-	return withRequestID(withRecover(s.log, withLogging(s.log, notFoundAware)))
+	var tel *sim.Telemetry
+	if s.sim != nil {
+		tel = s.sim.Telemetry
+	}
+	route := func(r *http.Request) string {
+		if _, p := s.mux.Handler(r); p != "" {
+			if i := strings.IndexByte(p, ' '); i >= 0 {
+				p = p[i+1:] // "POST /pix/transfers" -> "/pix/transfers"
+			}
+			return p
+		}
+		return "unmatched"
+	}
+	return withRequestID(withTrace(withRecover(s.log, withMetrics(tel, route, withLogging(s.log, notFoundAware)))))
+}
+
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	s.sim.Telemetry.Registry.Handler().ServeHTTP(w, r)
 }
 
 // probe captures the status of the mux's own 404/405 handler.

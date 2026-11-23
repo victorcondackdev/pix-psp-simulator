@@ -128,12 +128,12 @@ func TestMEDStateMachine(t *testing.T) {
 		payeeBalance int64
 	}{
 		{"accepted full", 0, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDAccept, MEDRefunded, true}}, 2000, 0},
-		{"accepted partial block", 1500, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDAccept, MEDRefunded, true}}, 500, 0},
+		{"accepted partial block (MED 1.0)", 1500, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDAccept, MEDRefunded, true}}, 500, 0},
 		{"rejected releases", 0, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDReject, MEDClosed, true}}, 0, 2000},
 		{"cancel after block", 0, []step{{MEDBlock, MEDBlocked, true}, {MEDCancel, MEDCancelled, true}}, 0, 2000},
 		{"cancel open", 0, []step{{MEDCancel, MEDCancelled, true}, {MEDBlock, MEDCancelled, false}}, 0, 2000},
 		{"invalid order", 0, []step{{MEDAccept, MEDOpen, false}, {MEDAnalyze, MEDOpen, false}, {MEDBlock, MEDBlocked, true}, {MEDReject, MEDBlocked, false}}, 0, 0},
-		{"nothing to block", 2000, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDAccept, MEDRefunded, true}}, 0, 0},
+		{"nothing to block (MED 1.0)", 2000, []step{{MEDBlock, MEDBlocked, true}, {MEDAnalyze, MEDAnalysis, true}, {MEDAccept, MEDRefunded, true}}, 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,7 +143,11 @@ func TestMEDStateMachine(t *testing.T) {
 				settledTransfer(t, e, "padaria", "bob", tt.spend)
 			}
 			alice0 := e.balance(t, "alice")
-			inf, err := e.ReportInfraction(InfractionRequest{EndToEndID: tr.EndToEndID, Details: "scam"})
+			version := MED2
+			if strings.HasSuffix(tt.name, "(MED 1.0)") {
+				version = MED1
+			}
+			inf, err := e.ReportInfraction(InfractionRequest{EndToEndID: tr.EndToEndID, Details: "scam", MEDVersion: version})
 			if err != nil || inf.Status != MEDOpen || fmt.Sprint(inf.Allowed) != "[block cancel]" {
 				t.Fatalf("%+v %v", inf, err)
 			}

@@ -37,6 +37,8 @@ type config struct {
 	Latency          time.Duration
 	ChargeExpiry     time.Duration
 	MaxTransferCents int64
+	MEDBlockWindow   time.Duration
+	MEDMaxAccounts   int
 	Scenarios        string
 	Seed             int64
 	WebhookAttempts  int
@@ -59,13 +61,15 @@ func parseConfig(args []string, getenv func(string) string, stderr io.Writer) (c
 		return def
 	}
 	str := func(p *string, name, def, usage string) { fs.StringVar(p, name, env(name, def), usage) }
-	var latency, expiry, backoff, timeout, maxCents, seed, attempts string
+	var latency, expiry, backoff, timeout, maxCents, seed, attempts, medWindow, medAccounts string
 	str(&c.Addr, "addr", ":8080", "listen address")
 	str(&c.ISPB, "ispb", "99999999", "simulator ISPB (8 digits), used in EndToEndIds")
 	str(&c.BaseURL, "base-url", "", "public base URL for dynamic QR locations (default http://localhost:<port>)")
 	str(&latency, "settlement-latency", "500ms", "delay before a transfer reaches ACSC/RJCT")
 	str(&expiry, "charge-expiry", "1h", "default expiration of dynamic charges")
 	str(&maxCents, "max-transfer-cents", "0", "reject larger transfers with AM02 (0 = no limit)")
+	str(&medWindow, "med-block-window", "72h", "how long an unanalysed MED cautionary block lasts")
+	str(&medAccounts, "med-max-accounts", "5", "accounts MED 2.0 tracing may visit, including the payee")
 	str(&c.Scenarios, "scenarios", "", "comma-separated scenario files or globs to load at startup")
 	str(&seed, "seed", "0", "random seed for chaos probabilities and jitter (0 = time based)")
 	str(&attempts, "webhook-max-attempts", "6", "webhook attempts before giving up")
@@ -95,6 +99,8 @@ func parseConfig(args []string, getenv func(string) string, stderr io.Writer) (c
 	parse("webhook-timeout", timeout, dur(&c.WebhookTimeout))
 	parse("max-transfer-cents", maxCents, func(v string) error { n, e := strconv.ParseInt(v, 10, 64); c.MaxTransferCents = n; return e })
 	parse("seed", seed, func(v string) error { n, e := strconv.ParseInt(v, 10, 64); c.Seed = n; return e })
+	parse("med-block-window", medWindow, dur(&c.MEDBlockWindow))
+	parse("med-max-accounts", medAccounts, func(v string) error { n, e := strconv.Atoi(v); c.MEDMaxAccounts = n; return e })
 	parse("webhook-max-attempts", attempts, func(v string) error { n, e := strconv.Atoi(v); c.WebhookAttempts = n; return e })
 	if err != nil {
 		return c, err
@@ -128,8 +134,10 @@ func build(c config, addr string, log *slog.Logger) (*sim.Sim, *api.Server, erro
 	}
 	clk := clock.NewVirtual()
 	ch := chaos.New(seed)
+	tel := sim.NewTelemetry()
 	n := notify.New(clk, &http.Client{}, notify.Config{
 		MaxAttempts: c.WebhookAttempts, BaseBackoff: c.WebhookBackoff, Timeout: c.WebhookTimeout,
+		OnAttempt: tel.WebhookAttempt,
 	}, ch.Int63n, log)
 	base := c.BaseURL
 	if base == "" {
@@ -139,7 +147,8 @@ func build(c config, addr string, log *slog.Logger) (*sim.Sim, *api.Server, erro
 	s := sim.New(sim.Config{
 		ISPB: c.ISPB, BaseURL: base, SettlementLatency: c.Latency,
 		ChargeExpiry: c.ChargeExpiry, MaxTransferCents: c.MaxTransferCents,
-	}, sim.Deps{Clock: clk, Chaos: ch, Notify: n, Log: log})
+		MEDBlockWindow: c.MEDBlockWindow, MEDMaxAccounts: c.MEDMaxAccounts,
+	}, sim.Deps{Clock: clk, Chaos: ch, Notify: n, Log: log, Telemetry: tel})
 	if c.Scenarios != "" {
 		var patterns []string
 		for _, p := range strings.Split(c.Scenarios, ",") {

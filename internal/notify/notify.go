@@ -33,6 +33,10 @@ type Config struct {
 	// clock, not the simulator clock, so consumers verifying with their own
 	// clock keep working after the simulator time-travels.
 	SignTime func() time.Time
+	// OnAttempt, when set, is called after every HTTP attempt with the event
+	// type, the outcome (delivered, retry or failed) and the attempt's
+	// duration. It must not block; the simulator uses it for metrics.
+	OnAttempt func(eventType, outcome string, d time.Duration)
 }
 
 func (c Config) withDefaults() Config {
@@ -122,6 +126,7 @@ type Delivery struct {
 	Attempts      []Attempt  `json:"attempts"`
 	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
+	Traceparent   string     `json:"traceparent,omitempty"`
 
 	body []byte
 	ep   Endpoint
@@ -131,6 +136,10 @@ type Delivery struct {
 type PublishOptions struct {
 	Duplicates int           // extra copies with the same event ID
 	Reorder    time.Duration // random extra initial delay in [0, Reorder]
+	// Traceparent is a W3C trace context sent as the traceparent header, so
+	// a consumer's handling of the webhook joins the trace that started the
+	// payment.
+	Traceparent string
 }
 
 // Dispatcher sends events. It is safe for concurrent use.
@@ -233,7 +242,7 @@ func (d *Dispatcher) Publish(ev webhook.Event, opts PublishOptions) []string {
 		dl := &Delivery{
 			ID: fmt.Sprintf("dlv_%06d", d.seq), EventID: ev.ID, EventType: ev.Type, AccountID: ev.AccountID,
 			URL: ep.URL, Copy: copyN, Status: StatusPending, Attempts: []Attempt{}, CreatedAt: d.clock.Now(),
-			body: body, ep: ep,
+			Traceparent: opts.Traceparent, body: body, ep: ep,
 		}
 		d.deliveries = append(d.deliveries, dl)
 		d.byID[dl.ID] = dl
@@ -289,14 +298,20 @@ func (d *Dispatcher) attempt(dl *Delivery) {
 	defer d.mu.Unlock()
 	dl.Attempts = append(dl.Attempts, a)
 	dl.NextAttemptAt = nil
+	outcome := "retry"
 	switch {
 	case err == nil && status >= 200 && status < 300:
 		dl.Status = StatusDelivered
+		outcome = StatusDelivered
 	case n >= d.cfg.MaxAttempts || d.closed:
 		dl.Status = StatusFailed
+		outcome = StatusFailed
 		d.log.Warn("webhook delivery failed", "delivery", dl.ID, "event", dl.EventID, "attempts", n)
 	default:
 		d.scheduleLocked(dl, Jitter(Backoff(n, d.cfg.BaseBackoff, d.cfg.MaxBackoff), d.rnd))
+	}
+	if d.cfg.OnAttempt != nil {
+		d.cfg.OnAttempt(dl.EventType, outcome, time.Since(wallStart))
 	}
 }
 
@@ -314,6 +329,9 @@ func (d *Dispatcher) send(ep Endpoint, dl *Delivery, n int) (int, error) {
 	req.Header.Set(webhook.EventTypeHeader, dl.EventType)
 	req.Header.Set("X-Delivery-Id", dl.ID)
 	req.Header.Set("X-Delivery-Attempt", fmt.Sprint(n))
+	if dl.Traceparent != "" {
+		req.Header.Set("traceparent", dl.Traceparent)
+	}
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return 0, err

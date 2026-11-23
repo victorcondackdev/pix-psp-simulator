@@ -17,11 +17,13 @@ import (
 	"github.com/victorcondackdev/brpay/document"
 	"github.com/victorcondackdev/brpay/pix"
 
+	"github.com/victorcondackdev/pix-psp-simulator/internal/bizday"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/chaos"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/clock"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/dict"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/ledger"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/notify"
+	"github.com/victorcondackdev/pix-psp-simulator/internal/sta"
 	"github.com/victorcondackdev/pix-psp-simulator/webhook"
 )
 
@@ -43,6 +45,25 @@ type Config struct {
 	ChargeExpiry time.Duration
 	// MerchantCity is used in BR Codes when a charge does not set one.
 	MerchantCity string
+	// MEDBlockWindow is how long a cautionary block lasts without analysis
+	// before it lapses and the funds are released (default 72h).
+	MEDBlockWindow time.Duration
+	// MEDMaxAccounts caps how many accounts MED 2.0 tracing visits,
+	// including the original payee (default 5).
+	MEDMaxAccounts int
+	// Pix Automático: hour of the due date at which the debit runs
+	// (default 6h, Brasília), the notice window for scheduling a charge
+	// (default 2 to 10 days ahead) and the daily retries on insufficient
+	// funds (default 3).
+	AutomaticDebitHour     time.Duration
+	AutomaticMinNoticeDays int
+	AutomaticMaxNoticeDays int
+	AutomaticRetries       int
+	// ProximityNightStart and ProximityNightEnd bound the night period
+	// (default 20h to 6h, Brasília) in which an account's night limit, if
+	// set, applies to Pix por aproximação.
+	ProximityNightStart time.Duration
+	ProximityNightEnd   time.Duration
 }
 
 func (c Config) withDefaults() Config {
@@ -60,6 +81,30 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MerchantCity == "" {
 		c.MerchantCity = "RIO DE JANEIRO"
+	}
+	if c.MEDBlockWindow <= 0 {
+		c.MEDBlockWindow = 72 * time.Hour
+	}
+	if c.MEDMaxAccounts <= 0 {
+		c.MEDMaxAccounts = 5
+	}
+	if c.AutomaticDebitHour <= 0 {
+		c.AutomaticDebitHour = 6 * time.Hour
+	}
+	if c.AutomaticMinNoticeDays <= 0 {
+		c.AutomaticMinNoticeDays = 2
+	}
+	if c.AutomaticMaxNoticeDays <= 0 {
+		c.AutomaticMaxNoticeDays = 10
+	}
+	if c.AutomaticRetries <= 0 {
+		c.AutomaticRetries = 3
+	}
+	if c.ProximityNightStart <= 0 {
+		c.ProximityNightStart = 20 * time.Hour
+	}
+	if c.ProximityNightEnd <= 0 {
+		c.ProximityNightEnd = 6 * time.Hour
 	}
 	return c
 }
@@ -108,8 +153,12 @@ type Sim struct {
 	DICT   *dict.Directory
 	Chaos  *chaos.Engine
 	Notify *notify.Dispatcher
-	log    *slog.Logger
-	rand   io.Reader
+	// Telemetry holds the Prometheus metrics served at /metrics.
+	Telemetry *Telemetry
+	// STA receives regulatory documents (CADOC 4111 and 4010).
+	STA  *sta.Service
+	log  *slog.Logger
+	rand io.Reader
 
 	mu          sync.Mutex
 	transfers   map[string]*Transfer
@@ -119,6 +168,10 @@ type Sim struct {
 	chargeOrder []string
 	infractions map[string]*Infraction
 	infOrder    []string
+	recurrences map[string]*Recurrence
+	recOrder    []string
+	autoCharges map[string]*AutoCharge
+	limits      map[string]Limits
 	seq         int
 	timers      sync.WaitGroup
 }
@@ -130,6 +183,9 @@ type Deps struct {
 	Notify *notify.Dispatcher
 	Log    *slog.Logger
 	Rand   io.Reader
+	// Telemetry receives the simulator's metrics; pass the same value to
+	// notify.Config.OnAttempt (Telemetry.WebhookAttempt) to count webhooks.
+	Telemetry *Telemetry
 }
 
 // New returns a simulator.
@@ -144,18 +200,26 @@ func New(cfg Config, deps Deps) *Sim {
 	if deps.Log == nil {
 		deps.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if deps.Telemetry == nil {
+		deps.Telemetry = NewTelemetry()
+	}
 	if deps.Notify == nil {
-		deps.Notify = notify.New(deps.Clock, nil, notify.Config{}, deps.Chaos.Int63n, deps.Log)
+		deps.Notify = notify.New(deps.Clock, nil, notify.Config{OnAttempt: deps.Telemetry.WebhookAttempt}, deps.Chaos.Int63n, deps.Log)
 	}
 	if deps.Rand == nil {
 		deps.Rand = rand.Reader
 	}
-	return &Sim{
+	s := &Sim{
 		cfg: cfg, Clock: deps.Clock, Ledger: ledger.New(deps.Clock), DICT: dict.New(deps.Clock),
-		Chaos: deps.Chaos, Notify: deps.Notify, log: deps.Log, rand: deps.Rand,
+		Chaos: deps.Chaos, Notify: deps.Notify, Telemetry: deps.Telemetry, log: deps.Log, rand: deps.Rand,
 		transfers: map[string]*Transfer{}, charges: map[string]*Charge{}, locations: map[string]string{},
-		infractions: map[string]*Infraction{},
+		infractions: map[string]*Infraction{}, recurrences: map[string]*Recurrence{}, autoCharges: map[string]*AutoCharge{},
+		limits: map[string]Limits{},
 	}
+	s.STA = sta.New(s, bizday.Calendar{}, sta.Config{})
+	s.STA.OnSubmit(func(doc, status string) { s.Telemetry.STASubmissions.Inc(doc, status) })
+	s.registerGauges()
+	return s
 }
 
 // Config returns the effective configuration.

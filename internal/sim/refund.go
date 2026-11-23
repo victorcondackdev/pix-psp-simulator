@@ -106,6 +106,7 @@ func (s *Sim) refundLocked(e2e string, r RefundRequest, ov *chaos.Overrides, sou
 		}
 		ref.Status, ref.Reason = iso.StatusRejected, code
 	}
+	s.Telemetry.Refunds.Inc(ref.Status, ref.ReturnReason)
 	if ref.Status == iso.StatusRejected {
 		ref.ReasonDescription = iso.Reasons[ref.Reason]
 		t.Refunds = append(t.Refunds, ref)
@@ -115,7 +116,7 @@ func (s *Sim) refundLocked(e2e string, r RefundRequest, ov *chaos.Overrides, sou
 	t.Refunds = append(t.Refunds, ref)
 	payer, payee := t.Payer.AccountID, t.Payee.AccountID
 	evPayer, evPayee := s.nextEventID(), s.nextEventID()
-	opts := notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder}
+	opts := notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder, Traceparent: t.Traceparent}
 	return ref, func() {
 		s.publish(evPayer, webhook.EventRefundCompleted, payer, ref, opts)
 		s.publish(evPayee, webhook.EventRefundCompleted, payee, ref, opts)
@@ -149,6 +150,7 @@ const (
 	MEDRefunded  InfractionStatus = "REFUNDED"  // accepted: held funds returned (FR01)
 	MEDClosed    InfractionStatus = "CLOSED"    // rejected after analysis: funds released
 	MEDCancelled InfractionStatus = "CANCELLED" // withdrawn by the reporter
+	MEDExpired   InfractionStatus = "EXPIRED"   // cautionary block lapsed without analysis: funds released
 )
 
 // InfractionEvent drives the MED state machine.
@@ -161,6 +163,7 @@ const (
 	MEDAccept  InfractionEvent = "accept"
 	MEDReject  InfractionEvent = "reject"
 	MEDCancel  InfractionEvent = "cancel"
+	MEDExpire  InfractionEvent = "expire" // fired by the simulator when the block window ends
 )
 
 // MEDMachine is the simplified MED lifecycle:
@@ -168,14 +171,16 @@ const (
 //	OPEN --block--> BLOCKED --analyze--> ANALYSIS --accept--> REFUNDED
 //	                                              \--reject--> CLOSED
 //	OPEN|BLOCKED --cancel--> CANCELLED
+//	BLOCKED --expire--> EXPIRED (block window over without analysis)
 var MEDMachine = fsm.New([]fsm.Transition[InfractionStatus, InfractionEvent]{
+	{From: MEDBlocked, Event: MEDExpire, To: MEDExpired},
 	{From: MEDOpen, Event: MEDBlock, To: MEDBlocked},
 	{From: MEDOpen, Event: MEDCancel, To: MEDCancelled},
 	{From: MEDBlocked, Event: MEDAnalyze, To: MEDAnalysis},
 	{From: MEDBlocked, Event: MEDCancel, To: MEDCancelled},
 	{From: MEDAnalysis, Event: MEDAccept, To: MEDRefunded},
 	{From: MEDAnalysis, Event: MEDReject, To: MEDClosed},
-}, MEDRefunded, MEDClosed, MEDCancelled)
+}, MEDRefunded, MEDClosed, MEDCancelled, MEDExpired)
 
 // Step is one transition in an infraction's history.
 type Step struct {
@@ -199,12 +204,21 @@ type Infraction struct {
 	History    []Step            `json:"history"`
 	CreatedAt  time.Time         `json:"created_at"`
 	UpdatedAt  time.Time         `json:"updated_at"`
-	payeeAcct  string
+	// Version is the MED version: "2.0" (default) traces the funds through
+	// the accounts they were moved to; "1.0" blocks only the payee.
+	Version string `json:"med_version"`
+	// Trace lists every account where funds were blocked, in tracing order.
+	Trace []Hop `json:"trace"`
+	// BlockExpiresAt is when an unanalysed cautionary block lapses.
+	BlockExpiresAt *time.Time `json:"block_expires_at,omitempty"`
+	payeeAcct      string
+	expiry         clockTimer
 }
 
 func (i *Infraction) snapshot() Infraction {
 	c := *i
 	c.History = append([]Step{}, i.History...)
+	c.Trace = append([]Hop{}, i.Trace...)
 	c.Allowed = MEDMachine.Events(i.Status)
 	return c
 }
@@ -214,6 +228,7 @@ type InfractionRequest struct {
 	EndToEndID string `json:"end_to_end_id"`
 	Reason     string `json:"reason,omitempty"` // FRAUD (default) or REFUND_REQUEST
 	Details    string `json:"details,omitempty"`
+	MEDVersion string `json:"med_version,omitempty"` // "2.0" (default) or "1.0"
 }
 
 // ReportInfraction opens a MED infraction on a settled transfer.
@@ -223,6 +238,12 @@ func (s *Sim) ReportInfraction(r InfractionRequest) (Infraction, error) {
 	}
 	if r.Reason != "FRAUD" && r.Reason != "REFUND_REQUEST" {
 		return Infraction{}, invalid("invalid_reason", "reason must be FRAUD or REFUND_REQUEST")
+	}
+	if r.MEDVersion == "" {
+		r.MEDVersion = MED2
+	}
+	if r.MEDVersion != MED1 && r.MEDVersion != MED2 {
+		return Infraction{}, invalid("invalid_med_version", "med_version must be 1.0 or 2.0")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,6 +263,7 @@ func (s *Sim) ReportInfraction(r InfractionRequest) (Infraction, error) {
 	inf := &Infraction{
 		ID: "inf_" + s.randomHex(6), EndToEndID: r.EndToEndID, Reason: r.Reason, Details: r.Details,
 		Status: MEDOpen, History: []Step{}, CreatedAt: now, UpdatedAt: now, payeeAcct: t.Payee.AccountID,
+		Version: r.MEDVersion, Trace: []Hop{},
 	}
 	s.infractions[inf.ID] = inf
 	s.infOrder = append(s.infOrder, inf.ID)
@@ -290,42 +312,36 @@ func (s *Sim) ActOnInfraction(id string, ev InfractionEvent) (Infraction, error)
 	step := Step{From: inf.Status, Event: ev, To: next, At: s.Clock.Now()}
 	switch ev {
 	case MEDBlock:
-		bal, _ := s.Ledger.Get(inf.payeeAcct)
-		hold := t.AmountCents - t.RefundedCents
-		if bal.Balance < hold {
-			hold = bal.Balance
-		}
-		if hold > 0 {
-			if _, err := s.Ledger.Move(inf.payeeAcct, ledger.MEDHold, hold, inf.ID, "MED cautionary block"); err != nil {
-				hold = 0
-			}
-		}
-		inf.HeldCents = hold
-		if hold < t.AmountCents-t.RefundedCents {
-			step.Note = "partial block: payee balance was insufficient"
-		}
-	case MEDReject, MEDCancel:
-		if inf.HeldCents > 0 {
-			_, _ = s.Ledger.Move(ledger.MEDHold, inf.payeeAcct, inf.HeldCents, inf.ID, "MED block released")
-			inf.HeldCents = 0
-		}
+		s.blockLocked(inf, t, &step)
+	case MEDReject, MEDCancel, MEDExpire:
+		s.releaseLocked(inf, HopReleased)
+	}
+	if MEDMachine.Terminal(next) && inf.expiry != nil {
+		inf.expiry.Stop()
+		inf.expiry, inf.BlockExpiresAt = nil, nil
 	}
 	var after func()
 	if ev == MEDAccept {
 		if inf.HeldCents > 0 {
 			ref, fn, err := s.refundLocked(inf.EndToEndID, RefundRequest{AmountCents: inf.HeldCents, Reason: iso.ReturnFraud, Description: "MED " + inf.ID}, nil, ledger.MEDHold, inf.ID)
 			if err != nil || ref.Status != iso.StatusSettled {
-				// Return the hold to the payee rather than leaving it stranded.
-				_, _ = s.Ledger.Move(ledger.MEDHold, inf.payeeAcct, inf.HeldCents, inf.ID, "MED refund failed, block released")
+				// Return the holds to their accounts rather than leaving them stranded.
+				s.releaseLocked(inf, HopReleased)
 				step.Note = "refund failed; block released"
 			} else {
 				inf.RefundID, after = ref.ID, fn
+				for i := range inf.Trace {
+					if inf.Trace[i].Status == HopBlocked {
+						inf.Trace[i].Status = HopReturned
+					}
+				}
 			}
 		} else {
 			step.Note = "nothing was blocked; no funds returned"
 		}
 		inf.HeldCents = 0
 	}
+	s.Telemetry.MEDTransitions.Inc(string(ev), string(next))
 	inf.Status = next
 	inf.UpdatedAt = step.At
 	inf.History = append(inf.History, step)
