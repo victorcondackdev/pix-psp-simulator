@@ -60,6 +60,7 @@ type Transfer struct {
 	SettledAt         *time.Time `json:"settled_at,omitempty"`
 	Refunds           []Refund   `json:"refunds"`
 	Chaos             []string   `json:"chaos_rules,omitempty"`
+	Traceparent       string     `json:"traceparent,omitempty"`
 
 	reserved bool
 	pending  string // reason decided at initiation, applied at settlement
@@ -90,6 +91,9 @@ type TransferRequest struct {
 	AmountCents   int64       `json:"amount_cents"`
 	EndToEndID    string      `json:"end_to_end_id,omitempty"`
 	Description   string      `json:"description,omitempty"`
+	// Traceparent is the W3C trace context of the request that created the
+	// transfer (set by the HTTP layer); webhooks about the transfer carry it.
+	Traceparent string `json:"-"`
 
 	txid       string
 	initiation string
@@ -209,8 +213,8 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 	t := &Transfer{
 		EndToEndID: e2e, TxID: r.txid, Initiation: r.initiation, Status: iso.StatusPending,
 		AmountCents: r.AmountCents, Description: r.Description, Payer: partyOf(payer), Payee: payee,
-		CreatedAt: now, SettleAt: now.Add(latency), Refunds: []Refund{}, Chaos: dec.Rules,
-		pending: reason, notify: notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder},
+		CreatedAt: now, SettleAt: now.Add(latency), Refunds: []Refund{}, Chaos: dec.Rules, Traceparent: r.Traceparent,
+		pending: reason, notify: notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder, Traceparent: r.Traceparent},
 	}
 
 	s.mu.Lock()
@@ -271,6 +275,8 @@ func (s *Sim) settle(e2e, chargeTx string) {
 		s.finishChargeLocked(chargeTx, e2e, t.Status == iso.StatusSettled)
 	}
 	snap := t.snapshot()
+	s.Telemetry.Transfers.Inc(snap.Status, snap.Reason, snap.Initiation)
+	s.Telemetry.SettlementLatency.ObserveDuration(now.Sub(snap.CreatedAt), snap.Status)
 	var ids [2]string
 	ids[0] = s.nextEventID()
 	ids[1] = s.nextEventID()

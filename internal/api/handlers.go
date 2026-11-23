@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/sha256"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -152,9 +153,19 @@ func (s *Server) lookupKey(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.sim.DICT.Lookup(r.PathValue("key"), payer)
 	if err != nil {
+		result := "invalid"
+		var rl *dict.RateLimitError
+		switch {
+		case errors.As(err, &rl):
+			result = "rate_limited"
+		case errors.Is(err, dict.ErrKeyNotFound):
+			result = "not_found"
+		}
+		s.sim.Telemetry.DICTLookups.Inc(result)
 		writeError(w, r, err)
 		return
 	}
+	s.sim.Telemetry.DICTLookups.Inc("found")
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -287,6 +298,7 @@ func (s *Server) createTransfer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	req.Traceparent = traceparent(r)
 	key := r.Header.Get(IdempotencyHeader)
 	if key == "" {
 		s.respondTransfer(w, r, func() (sim.Transfer, error) { return s.sim.CreateTransfer(req, ov) })
@@ -367,6 +379,7 @@ func (s *Server) payQR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	req.Traceparent = traceparent(r)
 	s.respondTransfer(w, r, func() (sim.Transfer, error) { return s.sim.PayQR(req, ov) })
 }
 

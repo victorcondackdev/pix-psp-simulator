@@ -301,6 +301,8 @@ type QRPaymentRequest struct {
 	// match the code otherwise.
 	AmountCents int64  `json:"amount_cents,omitempty"`
 	EndToEndID  string `json:"end_to_end_id,omitempty"`
+	// Traceparent is set by the HTTP layer (see TransferRequest).
+	Traceparent string `json:"-"`
 }
 
 // PayQR decodes, lints and pays a BR Code.
@@ -318,7 +320,7 @@ func (s *Sim) PayQR(r QRPaymentRequest, ov *chaos.Overrides) (Transfer, error) {
 	if err != nil {
 		return Transfer{}, &Error{Kind: KindInvalid, Code: "brcode_invalid", Msg: err.Error(), Err: err}
 	}
-	tr := TransferRequest{FromAccountID: r.FromAccountID, EndToEndID: r.EndToEndID, AmountCents: r.AmountCents}
+	tr := TransferRequest{FromAccountID: r.FromAccountID, EndToEndID: r.EndToEndID, AmountCents: r.AmountCents, Traceparent: r.Traceparent}
 	if b.Static {
 		tr.Key, tr.txid, tr.initiation, tr.Description = b.Key, b.TxID, InitStaticQR, b.Description
 		if b.Cents > 0 {

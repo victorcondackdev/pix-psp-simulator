@@ -1856,6 +1856,28 @@
           }
         ]
       }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "summary": "Prometheus metrics",
+        "tags": [
+          "system"
+        ],
+        "description": "Text exposition format 0.0.4: HTTP requests and latency by route, transfers by status and reason, settlement latency, DICT lookups, webhook attempts, MED transitions and traced hops, STA submissions, Pix Automático and Pix por aproximação counters, ledger and queue gauges.",
+        "responses": {
+          "200": {
+            "description": "Metrics",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "webhooks": {

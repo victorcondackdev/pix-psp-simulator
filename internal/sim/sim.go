@@ -108,8 +108,10 @@ type Sim struct {
 	DICT   *dict.Directory
 	Chaos  *chaos.Engine
 	Notify *notify.Dispatcher
-	log    *slog.Logger
-	rand   io.Reader
+	// Telemetry holds the Prometheus metrics served at /metrics.
+	Telemetry *Telemetry
+	log       *slog.Logger
+	rand      io.Reader
 
 	mu          sync.Mutex
 	transfers   map[string]*Transfer
@@ -130,6 +132,9 @@ type Deps struct {
 	Notify *notify.Dispatcher
 	Log    *slog.Logger
 	Rand   io.Reader
+	// Telemetry receives the simulator's metrics; pass the same value to
+	// notify.Config.OnAttempt (Telemetry.WebhookAttempt) to count webhooks.
+	Telemetry *Telemetry
 }
 
 // New returns a simulator.
@@ -144,18 +149,23 @@ func New(cfg Config, deps Deps) *Sim {
 	if deps.Log == nil {
 		deps.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if deps.Telemetry == nil {
+		deps.Telemetry = NewTelemetry()
+	}
 	if deps.Notify == nil {
-		deps.Notify = notify.New(deps.Clock, nil, notify.Config{}, deps.Chaos.Int63n, deps.Log)
+		deps.Notify = notify.New(deps.Clock, nil, notify.Config{OnAttempt: deps.Telemetry.WebhookAttempt}, deps.Chaos.Int63n, deps.Log)
 	}
 	if deps.Rand == nil {
 		deps.Rand = rand.Reader
 	}
-	return &Sim{
+	s := &Sim{
 		cfg: cfg, Clock: deps.Clock, Ledger: ledger.New(deps.Clock), DICT: dict.New(deps.Clock),
-		Chaos: deps.Chaos, Notify: deps.Notify, log: deps.Log, rand: deps.Rand,
+		Chaos: deps.Chaos, Notify: deps.Notify, Telemetry: deps.Telemetry, log: deps.Log, rand: deps.Rand,
 		transfers: map[string]*Transfer{}, charges: map[string]*Charge{}, locations: map[string]string{},
 		infractions: map[string]*Infraction{},
 	}
+	s.registerGauges()
+	return s
 }
 
 // Config returns the effective configuration.

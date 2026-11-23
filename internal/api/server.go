@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +74,7 @@ func (s *Server) Routes() []Route { return append([]Route(nil), s.routes...) }
 
 func (s *Server) register() {
 	s.handle("GET", "/healthz", s.healthz)
+	s.handle("GET", "/metrics", s.metrics)
 	s.handle("GET", "/openapi.json", s.openapi)
 	s.handle("GET", "/{$}", s.dashboard)
 
@@ -147,7 +149,24 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.mux.ServeHTTP(w, r)
 	})
-	return withRequestID(withRecover(s.log, withLogging(s.log, notFoundAware)))
+	var tel *sim.Telemetry
+	if s.sim != nil {
+		tel = s.sim.Telemetry
+	}
+	route := func(r *http.Request) string {
+		if _, p := s.mux.Handler(r); p != "" {
+			if i := strings.IndexByte(p, ' '); i >= 0 {
+				p = p[i+1:] // "POST /pix/transfers" -> "/pix/transfers"
+			}
+			return p
+		}
+		return "unmatched"
+	}
+	return withRequestID(withTrace(withRecover(s.log, withMetrics(tel, route, withLogging(s.log, notFoundAware)))))
+}
+
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	s.sim.Telemetry.Registry.Handler().ServeHTTP(w, r)
 }
 
 // probe captures the status of the mux's own 404/405 handler.

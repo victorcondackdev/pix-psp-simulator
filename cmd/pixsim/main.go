@@ -128,8 +128,10 @@ func build(c config, addr string, log *slog.Logger) (*sim.Sim, *api.Server, erro
 	}
 	clk := clock.NewVirtual()
 	ch := chaos.New(seed)
+	tel := sim.NewTelemetry()
 	n := notify.New(clk, &http.Client{}, notify.Config{
 		MaxAttempts: c.WebhookAttempts, BaseBackoff: c.WebhookBackoff, Timeout: c.WebhookTimeout,
+		OnAttempt: tel.WebhookAttempt,
 	}, ch.Int63n, log)
 	base := c.BaseURL
 	if base == "" {
@@ -139,7 +141,7 @@ func build(c config, addr string, log *slog.Logger) (*sim.Sim, *api.Server, erro
 	s := sim.New(sim.Config{
 		ISPB: c.ISPB, BaseURL: base, SettlementLatency: c.Latency,
 		ChargeExpiry: c.ChargeExpiry, MaxTransferCents: c.MaxTransferCents,
-	}, sim.Deps{Clock: clk, Chaos: ch, Notify: n, Log: log})
+	}, sim.Deps{Clock: clk, Chaos: ch, Notify: n, Log: log, Telemetry: tel})
 	if c.Scenarios != "" {
 		var patterns []string
 		for _, p := range strings.Split(c.Scenarios, ",") {

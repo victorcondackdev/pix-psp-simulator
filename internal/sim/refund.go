@@ -106,6 +106,7 @@ func (s *Sim) refundLocked(e2e string, r RefundRequest, ov *chaos.Overrides, sou
 		}
 		ref.Status, ref.Reason = iso.StatusRejected, code
 	}
+	s.Telemetry.Refunds.Inc(ref.Status, ref.ReturnReason)
 	if ref.Status == iso.StatusRejected {
 		ref.ReasonDescription = iso.Reasons[ref.Reason]
 		t.Refunds = append(t.Refunds, ref)
@@ -115,7 +116,7 @@ func (s *Sim) refundLocked(e2e string, r RefundRequest, ov *chaos.Overrides, sou
 	t.Refunds = append(t.Refunds, ref)
 	payer, payee := t.Payer.AccountID, t.Payee.AccountID
 	evPayer, evPayee := s.nextEventID(), s.nextEventID()
-	opts := notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder}
+	opts := notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder, Traceparent: t.Traceparent}
 	return ref, func() {
 		s.publish(evPayer, webhook.EventRefundCompleted, payer, ref, opts)
 		s.publish(evPayee, webhook.EventRefundCompleted, payee, ref, opts)
@@ -326,6 +327,7 @@ func (s *Sim) ActOnInfraction(id string, ev InfractionEvent) (Infraction, error)
 		}
 		inf.HeldCents = 0
 	}
+	s.Telemetry.MEDTransitions.Inc(string(ev), string(next))
 	inf.Status = next
 	inf.UpdatedAt = step.At
 	inf.History = append(inf.History, step)
