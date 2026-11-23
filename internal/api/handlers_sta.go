@@ -103,3 +103,18 @@ func (s *Server) calendar(w http.ResponseWriter, r *http.Request) {
 		"generated_at":          s.clock.Now().Format(time.RFC3339),
 	})
 }
+
+func (s *Server) camt053(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	day := q.Get("date")
+	if day == "" {
+		day = bizday.Date(s.clock.Now()).Format("2006-01-02")
+	}
+	raw, err := s.sim.Statement(q.Get("account_id"), day)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, _ = w.Write(raw)
+}

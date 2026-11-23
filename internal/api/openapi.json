@@ -42,6 +42,10 @@
     {
       "name": "sta",
       "description": "Sistema de Transmissão de Arquivos (simulated): receives CADOC 4111 (Saldos Contábeis Diários) and 4010 (Balancete Patrimonial Analítico), validates them and reconciles them against the simulator books."
+    },
+    {
+      "name": "automatico",
+      "description": "Pix Automático (simplified): recurrences authorised by the payer and charges debited on their due date, with daily retries."
     }
   ],
   "paths": {
@@ -2208,6 +2212,572 @@
           }
         }
       }
+    },
+    "/pix/automatico/recurrences": {
+      "post": {
+        "operationId": "createRecurrence",
+        "summary": "Propose a recurrence",
+        "tags": [
+          "automatico"
+        ],
+        "description": "Sent by the receiver; the payer must approve it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "receiver_account_id",
+                  "payer_account_id",
+                  "frequency",
+                  "start_date"
+                ],
+                "properties": {
+                  "receiver_account_id": {
+                    "type": "string"
+                  },
+                  "payer_account_id": {
+                    "type": "string"
+                  },
+                  "frequency": {
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "type": "string"
+                  },
+                  "end_date": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "contract_id": {
+                    "type": "string"
+                  },
+                  "fixed_amount_cents": {
+                    "type": "integer"
+                  },
+                  "max_amount_cents": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recurrence"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listRecurrences",
+        "summary": "List recurrences",
+        "tags": [
+          "automatico"
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "description": "Payer or receiver",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recurrences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recurrences": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Recurrence"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pix/automatico/recurrences/{id}": {
+      "get": {
+        "operationId": "getRecurrence",
+        "summary": "Get a recurrence",
+        "tags": [
+          "automatico"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recurrence"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/pix/automatico/recurrences/{id}/{action}": {
+      "post": {
+        "operationId": "actOnRecurrence",
+        "summary": "Approve, reject or cancel a recurrence",
+        "tags": [
+          "automatico"
+        ],
+        "description": "PENDING_APPROVAL -approve-> ACTIVE -cancel-> CANCELLED; PENDING_APPROVAL -reject-> REJECTED. approve accepts an optional body {\"payer_max_amount_cents\": n}, the payer's own cap. Cancelling cancels the scheduled charges.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "reject",
+                "cancel"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recurrence"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payer_max_amount_cents": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pix/automatico/recurrences/{id}/charges": {
+      "post": {
+        "operationId": "scheduleAutomaticCharge",
+        "summary": "Schedule a charge",
+        "tags": [
+          "automatico"
+        ],
+        "description": "The due date must be inside the recurrence, 2 to 10 days ahead (simulator setting), in a period with no other live charge; the amount must respect the fixed amount, the maximum and the payer cap. The debit runs at 06:00 (Brasília) on the due date and is retried daily, up to 3 times, on AM04.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount_cents",
+                  "due_date"
+                ],
+                "properties": {
+                  "amount_cents": {
+                    "type": "integer"
+                  },
+                  "due_date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticCharge"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      }
+    },
+    "/pix/automatico/charges/{id}": {
+      "get": {
+        "operationId": "getAutomaticCharge",
+        "summary": "Get a charge",
+        "tags": [
+          "automatico"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticCharge"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/pix/automatico/charges/{id}/cancel": {
+      "post": {
+        "operationId": "cancelAutomaticCharge",
+        "summary": "Cancel a charge",
+        "tags": [
+          "automatico"
+        ],
+        "description": "Until the day before the due date, or while retrying.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticCharge"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/accounts/{id}/limits": {
+      "get": {
+        "operationId": "getLimits",
+        "summary": "Get account limits",
+        "tags": [
+          "accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Limits"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "operationId": "setLimits",
+        "summary": "Set account limits",
+        "tags": [
+          "accounts"
+        ],
+        "description": "0 means no limit.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Limits"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Limits"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      }
+    },
+    "/pix/proximity-payments": {
+      "post": {
+        "operationId": "payProximity",
+        "summary": "Pay by proximity (NFC)",
+        "tags": [
+          "pix"
+        ],
+        "description": "Pix por aproximação: pays a BR Code read over NFC from a device, enforcing the payer's proximity, daily and night limits before the transfer is accepted.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "from_account_id",
+                  "brcode",
+                  "device_id"
+                ],
+                "properties": {
+                  "from_account_id": {
+                    "type": "string"
+                  },
+                  "brcode": {
+                    "type": "string"
+                  },
+                  "amount_cents": {
+                    "type": "integer"
+                  },
+                  "end_to_end_id": {
+                    "type": "string"
+                  },
+                  "device_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transfer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      }
+    },
+    "/iso/camt.053": {
+      "get": {
+        "operationId": "camt053",
+        "summary": "Account statement (camt.053)",
+        "tags": [
+          "system"
+        ],
+        "description": "BankToCustomerStatement (camt.053.001.08) of one account for one calendar day in Brasília: OPBD and CLBD balances, totals and one booked entry per posting, for line-by-line reconciliation.",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "description": "Account",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "AAAA-MM-DD (default: today)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        }
+      }
     }
   },
   "webhooks": {
@@ -2500,6 +3070,50 @@
           },
           "account_id": {
             "type": "string"
+          },
+          "fraud_risk": {
+            "type": "object",
+            "description": "Synthetic, explainable fraud indicator of the key owner computed from the simulator history (illustrative weights).",
+            "properties": {
+              "score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "LOW",
+                  "MEDIUM",
+                  "HIGH"
+                ]
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "examples": [
+                        "key.new",
+                        "account.new",
+                        "med.fraud_mark",
+                        "med.open",
+                        "inbound.fan_in",
+                        "flow.pass_through"
+                      ]
+                    },
+                    "weight": {
+                      "type": "integer"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -2809,7 +3423,8 @@
               "MANU",
               "DICT",
               "QRES",
-              "QRDN"
+              "QRDN",
+              "AUTO"
             ]
           },
           "status": {
@@ -2868,6 +3483,20 @@
           "traceparent": {
             "type": "string",
             "description": "W3C trace context of the request that created the transfer; sent on its webhooks"
+          },
+          "automatic_charge_id": {
+            "type": "string"
+          },
+          "proximity": {
+            "type": "object",
+            "properties": {
+              "device_id": {
+                "type": "string"
+              },
+              "night": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },
@@ -3562,6 +4191,156 @@
               "RELEASED",
               "AT_PAYER"
             ]
+          }
+        }
+      },
+      "Recurrence": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "receiver_account_id": {
+            "type": "string"
+          },
+          "payer_account_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "contract_id": {
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "WEEKLY",
+              "MONTHLY",
+              "QUARTERLY",
+              "SEMIANNUAL",
+              "ANNUAL"
+            ]
+          },
+          "fixed_amount_cents": {
+            "type": "integer"
+          },
+          "max_amount_cents": {
+            "type": "integer"
+          },
+          "payer_max_amount_cents": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_APPROVAL",
+              "ACTIVE",
+              "REJECTED",
+              "CANCELLED"
+            ]
+          },
+          "allowed_events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AutomaticCharge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "recurrence_id": {
+            "type": "string"
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "IN_PROGRESS",
+              "RETRYING",
+              "SETTLED",
+              "FAILED",
+              "CANCELLED"
+            ]
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "end_to_end_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Limits": {
+        "type": "object",
+        "properties": {
+          "proximity_per_transaction_cents": {
+            "type": "integer"
+          },
+          "proximity_daily_cents": {
+            "type": "integer"
+          },
+          "night_per_transaction_cents": {
+            "type": "integer",
+            "description": "Applies to Pix por aproximação between 20h and 6h (Brasília)"
           }
         }
       }

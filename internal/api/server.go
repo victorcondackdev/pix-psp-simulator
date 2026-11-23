@@ -109,6 +109,18 @@ func (s *Server) register() {
 	s.handle("POST", "/pix/transfers/{e2eid}/refunds", s.createRefund)
 	s.handle("GET", "/pix/transfers/{e2eid}/refunds/{id}", s.getRefund)
 
+	s.handle("POST", "/pix/proximity-payments", s.payProximity)
+	s.handle("GET", "/accounts/{id}/limits", s.getLimits)
+	s.handle("PUT", "/accounts/{id}/limits", s.setLimits)
+
+	s.handle("POST", "/pix/automatico/recurrences", s.createRecurrence)
+	s.handle("GET", "/pix/automatico/recurrences", s.listRecurrences)
+	s.handle("GET", "/pix/automatico/recurrences/{id}", s.getRecurrence)
+	s.handle("POST", "/pix/automatico/recurrences/{id}/charges", s.scheduleAutoCharge)
+	s.handle("POST", "/pix/automatico/recurrences/{id}/{action}", s.actOnRecurrence)
+	s.handle("GET", "/pix/automatico/charges/{id}", s.getAutoCharge)
+	s.handle("POST", "/pix/automatico/charges/{id}/cancel", s.cancelAutoCharge)
+
 	s.handle("POST", "/med/infractions", s.reportInfraction)
 	s.handle("GET", "/med/infractions", s.listInfractions)
 	s.handle("GET", "/med/infractions/{id}", s.getInfraction)
@@ -126,6 +138,7 @@ func (s *Server) register() {
 	s.handle("GET", "/sta/participants/{cnpj}", s.getParticipant)
 	s.handle("GET", "/sta/participants/{cnpj}/drafts/4111", s.draft4111)
 	s.handle("GET", "/admin/calendar", s.calendar)
+	s.handle("GET", "/iso/camt.053", s.camt053)
 
 	s.handle("GET", "/admin/stats", s.stats)
 	s.handle("GET", "/admin/clock", s.getClock)

@@ -1,8 +1,10 @@
 package sim
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/victorcondackdev/pix-psp-simulator/internal/bizday"
 	"github.com/victorcondackdev/pix-psp-simulator/internal/iso"
 )
 
@@ -30,4 +32,35 @@ func (s *Sim) Volume(ispb string, from, to time.Time) int64 {
 		}
 	}
 	return v
+}
+
+// Statement returns the camt.053 of an account for one calendar day
+// (Brasília): balances before and after the day and every posting in it.
+func (s *Sim) Statement(accountID, day string) ([]byte, error) {
+	a, err := s.Account(accountID)
+	if err != nil {
+		return nil, err
+	}
+	d, err := parseDate("date", day)
+	if err != nil {
+		return nil, err
+	}
+	start, end := d, bizday.EndOfDay(d)
+	opening, _ := s.Ledger.BalanceAt(accountID, start.Add(-time.Nanosecond))
+	closing, _ := s.Ledger.BalanceAt(accountID, end)
+	st := iso.Statement{
+		ID: "STMT-" + accountID + "-" + d.Format("20060102"), CreatedAt: s.Clock.Now(), AccountID: a.ID, ISPB: a.ISPB,
+		Branch: a.Branch, Number: a.Number, OwnerName: a.OwnerName, From: start, To: end,
+		OpeningCnts: opening, ClosingCnts: closing,
+	}
+	for _, p := range s.Ledger.Postings("") {
+		if p.At.Before(start) || p.At.After(end) || (p.From != accountID && p.To != accountID) {
+			continue
+		}
+		st.Entries = append(st.Entries, iso.StatementEntry{
+			Ref: p.Ref, ServicerRef: fmt.Sprint(p.Seq), AmountCents: p.Amount, Credit: p.To == accountID,
+			BookedAt: p.At, Info: p.Memo,
+		})
+	}
+	return iso.Camt053(st)
 }

@@ -61,6 +61,10 @@ type Transfer struct {
 	Refunds           []Refund   `json:"refunds"`
 	Chaos             []string   `json:"chaos_rules,omitempty"`
 	Traceparent       string     `json:"traceparent,omitempty"`
+	// AutomaticChargeID links a Pix Automático debit to its charge.
+	AutomaticChargeID string `json:"automatic_charge_id,omitempty"`
+	// Proximity marks a Pix por aproximação (NFC) payment and its device.
+	Proximity *ProximityInfo `json:"proximity,omitempty"`
 
 	reserved bool
 	pending  string // reason decided at initiation, applied at settlement
@@ -98,6 +102,8 @@ type TransferRequest struct {
 	txid       string
 	initiation string
 	chargeTx   string
+	autoCharge string
+	proximity  *ProximityInfo
 }
 
 // destination resolves the payee; a nil account with a reason means the
@@ -165,6 +171,11 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 	if len(r.Description) > 140 {
 		return Transfer{}, invalid("invalid_description", "description must be at most 140 characters")
 	}
+	if r.proximity != nil {
+		if err := s.checkProximity(payer.ID, r.AmountCents, r.proximity); err != nil {
+			return Transfer{}, err
+		}
+	}
 	payee, payeeAcct, reason, err := s.destination(r)
 	if err != nil {
 		return Transfer{}, err
@@ -216,6 +227,7 @@ func (s *Sim) CreateTransfer(r TransferRequest, ov *chaos.Overrides) (Transfer, 
 		EndToEndID: e2e, TxID: r.txid, Initiation: r.initiation, Status: iso.StatusPending,
 		AmountCents: r.AmountCents, Description: r.Description, Payer: partyOf(payer), Payee: payee,
 		CreatedAt: now, SettleAt: now.Add(latency), Refunds: []Refund{}, Chaos: dec.Rules, Traceparent: r.Traceparent,
+		AutomaticChargeID: r.autoCharge, Proximity: r.proximity,
 		pending: reason, notify: notify.PublishOptions{Duplicates: dec.Duplicates, Reorder: dec.Reorder, Traceparent: r.Traceparent},
 	}
 
@@ -276,6 +288,10 @@ func (s *Sim) settle(e2e, chargeTx string) {
 	if chargeTx != "" {
 		s.finishChargeLocked(chargeTx, e2e, t.Status == iso.StatusSettled)
 	}
+	afterAuto := func() {}
+	if t.AutomaticChargeID != "" {
+		afterAuto = s.finishAutoLocked(t.AutomaticChargeID, AutoAttempt{At: now, EndToEndID: e2e, Status: t.Status, Reason: t.Reason})
+	}
 	snap := t.snapshot()
 	s.Telemetry.Transfers.Inc(snap.Status, snap.Reason, snap.Initiation)
 	s.Telemetry.SettlementLatency.ObserveDuration(now.Sub(snap.CreatedAt), snap.Status)
@@ -283,6 +299,7 @@ func (s *Sim) settle(e2e, chargeTx string) {
 	ids[0] = s.nextEventID()
 	ids[1] = s.nextEventID()
 	s.mu.Unlock()
+	afterAuto()
 
 	if snap.Status == iso.StatusSettled {
 		s.publish(ids[0], webhook.EventPixSettled, snap.Payer.AccountID, snap, t.notify)

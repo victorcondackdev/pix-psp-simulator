@@ -42,6 +42,9 @@ const (
 	EventPixSettled      = "pix.settled"
 	EventPixRejected     = "pix.rejected"
 	EventRefundCompleted = "refund.completed"
+	// Pix Automático: sent to both the payer and the receiver.
+	EventAutomaticRecurrence = "automatico.recurrence.updated"
+	EventAutomaticCharge     = "automatico.charge.updated"
 )
 
 // Event is the JSON envelope of every delivery. ID is stable across retries

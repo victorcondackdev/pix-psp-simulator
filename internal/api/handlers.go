@@ -166,7 +166,10 @@ func (s *Server) lookupKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sim.Telemetry.DICTLookups.Inc("found")
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, struct {
+		dict.LookupResult
+		FraudRisk sim.FraudRisk `json:"fraud_risk"`
+	}{res, s.sim.FraudRisk(res.AccountID, res.CreatedAt)})
 }
 
 func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) {
