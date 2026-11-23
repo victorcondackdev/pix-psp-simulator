@@ -1317,6 +1317,15 @@
                   },
                   "details": {
                     "type": "string"
+                  },
+                  "med_version": {
+                    "type": "string",
+                    "enum": [
+                      "1.0",
+                      "2.0"
+                    ],
+                    "default": "2.0",
+                    "description": "2.0 traces the funds across accounts; 1.0 blocks only the payee"
                   }
                 }
               }
@@ -1421,12 +1430,13 @@
                 "analyze",
                 "accept",
                 "reject",
-                "cancel"
+                "cancel",
+                "expire"
               ]
             }
           }
         ],
-        "description": "OPEN -block-> BLOCKED -analyze-> ANALYSIS -accept-> REFUNDED | -reject-> CLOSED; OPEN or BLOCKED -cancel-> CANCELLED. Simplified model."
+        "description": "OPEN -block-> BLOCKED -analyze-> ANALYSIS -accept-> REFUNDED | -reject-> CLOSED; OPEN or BLOCKED -cancel-> CANCELLED; BLOCKED -expire-> EXPIRED (fired automatically when the block window ends). With MED 2.0 the block follows the funds through the transfers the payee made after receiving them, up to 5 accounts, and blocks at each one; accept returns everything blocked to the victim (FR01), reject, cancel and expire release every hop."
       }
     },
     "/webhooks/deliveries": {
@@ -2854,6 +2864,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "traceparent": {
+            "type": "string",
+            "description": "W3C trace context of the request that created the transfer; sent on its webhooks"
           }
         }
       },
@@ -2949,7 +2963,8 @@
               "ANALYSIS",
               "REFUNDED",
               "CLOSED",
-              "CANCELLED"
+              "CANCELLED",
+              "EXPIRED"
             ]
           },
           "held_cents": {
@@ -2995,6 +3010,25 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "med_version": {
+            "type": "string",
+            "enum": [
+              "1.0",
+              "2.0"
+            ]
+          },
+          "block_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When an unanalysed cautionary block lapses (default 72h after block)"
+          },
+          "trace": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MEDHop"
+            },
+            "description": "Accounts where funds were followed and blocked (MED 2.0)"
           }
         }
       },
@@ -3495,6 +3529,39 @@
           "last_accepted_4111": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "MEDHop": {
+        "type": "object",
+        "properties": {
+          "depth": {
+            "type": "integer",
+            "description": "0 is the original payee"
+          },
+          "account_id": {
+            "type": "string"
+          },
+          "ispb": {
+            "type": "string"
+          },
+          "via_end_to_end_id": {
+            "type": "string"
+          },
+          "traced_cents": {
+            "type": "integer"
+          },
+          "held_cents": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "BLOCKED",
+              "RETURNED",
+              "RELEASED",
+              "AT_PAYER"
+            ]
           }
         }
       }

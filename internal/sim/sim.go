@@ -45,6 +45,12 @@ type Config struct {
 	ChargeExpiry time.Duration
 	// MerchantCity is used in BR Codes when a charge does not set one.
 	MerchantCity string
+	// MEDBlockWindow is how long a cautionary block lasts without analysis
+	// before it lapses and the funds are released (default 72h).
+	MEDBlockWindow time.Duration
+	// MEDMaxAccounts caps how many accounts MED 2.0 tracing visits,
+	// including the original payee (default 5).
+	MEDMaxAccounts int
 }
 
 func (c Config) withDefaults() Config {
@@ -62,6 +68,12 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MerchantCity == "" {
 		c.MerchantCity = "RIO DE JANEIRO"
+	}
+	if c.MEDBlockWindow <= 0 {
+		c.MEDBlockWindow = 72 * time.Hour
+	}
+	if c.MEDMaxAccounts <= 0 {
+		c.MEDMaxAccounts = 5
 	}
 	return c
 }
